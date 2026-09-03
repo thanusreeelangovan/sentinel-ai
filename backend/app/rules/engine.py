@@ -1,156 +1,179 @@
-"""Rule Engine signal evaluation and sliding-window state tracking."""
+from app.rules.state import observe_user
+from app.schemas.rules import RuleEngineResult
+from app.schemas.transaction import Transaction
 
-from __future__ import annotations
-
-from collections import defaultdict, deque
-from datetime import datetime, timedelta
-from typing import Any, Dict, List, Set, Tuple
-from backend.app.schemas.transaction import ReceiverType, TransactionSchema
-
-
-class RuleEngine:
-    def __init__(self, window_short_min: int = 10, window_long_min: int = 60) -> None:
-        self.w_short = timedelta(minutes=window_short_min)
-        self.w_long = timedelta(minutes=window_long_min)
-        self._user_history: Dict[str, deque[datetime]] = defaultdict(deque)
-        self._user_receivers: Dict[str, Set[str]] = defaultdict(set)
-
-    def _evict_old(self, user_id: str, current_time: datetime) -> None:
-        window_start = current_time - self.w_long
-        queue = self._user_history[user_id]
-        while queue and queue[0] < window_start:
-            queue.popleft()
-
-    def _calc_velocity(self, user_id: str, ts: datetime) -> Tuple[float, bool]:
-        self._evict_old(user_id, ts)
-        q = self._user_history[user_id]
-        cutoff_short = ts - self.w_short
-        short_count = sum(1 for t in q if t >= cutoff_short)
-        long_count = len(q)
-
-        # Scale velocity: >3 in 10m or >8 in 60m triggers high risk
-        score = min(100.0, (short_count * 20.0) + (long_count * 5.0))
-        triggered = short_count >= 3 or long_count >= 8
-        return round(score, 2), triggered
-
-    def _calc_receiver_risk(self, user_id: str, receiver_id: str, receiver_type: ReceiverType) -> Tuple[float, bool]:
-        known = receiver_id in self._user_receivers[user_id]
-        is_p2p = receiver_type == ReceiverType.USER
-
-        if known:
-            score = 10.0 if not is_p2p else 25.0
-            triggered = False
-        else:
-            score = 65.0 if not is_p2p else 80.0
-            triggered = True
-        return round(score, 2), triggered
-
-    def _calc_behavioral_risk(self, amount: float, u_min: float, u_max: float) -> Tuple[float, bool]:
-        if amount <= u_max:
-            ratio = max(0.0, (amount - u_min) / max(u_max - u_min, 1.0))
-            score = ratio * 35.0
-            triggered = False
-        else:
-            multiplier = amount / max(u_max, 1.0)
-            score = min(100.0, 40.0 + (multiplier - 1.0) * 30.0)
-            triggered = multiplier >= 1.5
-        return round(score, 2), triggered
-
-    def evaluate(self, txn: TransactionSchema) -> Dict[str, Any]:
-        rules_triggered: List[str] = []
-        reason_codes: List[str] = []
-
-        v_score, v_trig = self._calc_velocity(txn.user_id, txn.timestamp)
-        if v_trig:
-            rules_triggered.append("HIGH_TRANSACTION_VELOCITY")
-            reason_codes.append("Multiple transactions detected within a short time window")
-
-        r_score, r_trig = self._calc_receiver_risk(txn.user_id, txn.receiver_id, txn.receiver_type)
-        if r_trig:
-            rules_triggered.append("NEW_RECEIVER")
-            reason_codes.append("Receiver has limited transaction history")
-
-        u_range = txn.user_context.usual_transaction_range
-        b_score, b_trig = self._calc_behavioral_risk(txn.amount, u_range.min, u_range.max)
-        if b_trig:
-            rules_triggered.append("UNUSUAL_AMOUNT")
-            reason_codes.append("Amount differs significantly from user's normal behavior")
-
-        # Record state post-evaluation
-        self._user_history[txn.user_id].append(txn.timestamp)
-        self._user_receivers[txn.user_id].add(txn.receiver_id)
-
-        return {
-            "velocity_score": v_score,
-            "receiver_score": r_score,
-            "behavioral_score": b_score,
-            "rules_triggered": rules_triggered,
-            "reason_codes": reason_codes,
-        }
+KNOWN_RECEIVER_TYPES = {
+    "merchant",
+    "user",
+    "bank",
+    "bank_account",
+    "bank account",
+}
+NIGHTTIME_HOURS = range(0, 5)
+LOCATION_SHIFT_DEGREES = 1.0
 
 
-if __name__ == "__main__":
-    from datetime import timezone
+def _clamp(score: float) -> float:
+    return round(min(100.0, max(0.0, score)), 1)
 
-    engine = RuleEngine()
-    now = datetime.now(timezone.utc)
-    base_context = {
-        "account_age_days": 100,
-        "previous_transaction_count": 20,
-        "usual_transaction_range": {"min": 100.0, "max": 2000.0},
-    }
 
-    # 1. Normal Transaction (known baseline)
-    txn_norm = TransactionSchema(
-        transaction_id="TX_1",
-        user_id="U1",
-        amount=500.0,
-        currency="INR",
-        receiver_id="REC_MERCHANT_1",
-        receiver_type="merchant",
-        timestamp=now,
-        device_id="D1",
-        device_type="android",
-        user_context=base_context,
-    )
-    res_norm = engine.evaluate(txn_norm)
-    assert res_norm["velocity_score"] == 0.0
-    assert "NEW_RECEIVER" in res_norm["rules_triggered"]
+def _daily_rate(transaction: Transaction) -> float:
+    account_age_days = max(transaction.user_context.account_age_days, 1)
+    return transaction.user_context.previous_transaction_count / account_age_days
 
-    # 2. Burst Transactions (velocity trigger)
-    for i in range(2, 6):
-        t = TransactionSchema(
-            transaction_id=f"TX_{i}",
-            user_id="U1",
-            amount=500.0,
-            currency="INR",
-            receiver_id="REC_MERCHANT_1",
-            receiver_type="merchant",
-            timestamp=now + timedelta(seconds=i * 10),
-            device_id="D1",
-            device_type="android",
-            user_context=base_context,
+
+def _velocity(transaction: Transaction) -> tuple[float, list[str], list[str]]:
+    rate = _daily_rate(transaction)
+    if rate <= 1:
+        return 10.0, [], []
+    if rate <= 5:
+        return 35.0, [], []
+    if rate <= 20:
+        return (
+            75.0,
+            ["HIGH_TRANSACTION_VELOCITY"],
+            ["Multiple transactions detected within a short time window"],
         )
-        res_v = engine.evaluate(t)
-
-    assert "HIGH_TRANSACTION_VELOCITY" in res_v["rules_triggered"]
-    assert res_v["velocity_score"] >= 75.0
-
-    # 3. Extreme amount trigger
-    txn_high = TransactionSchema(
-        transaction_id="TX_HIGH",
-        user_id="U2",
-        amount=10000.0,
-        currency="INR",
-        receiver_id="REC_P2P",
-        receiver_type="user",
-        timestamp=now,
-        device_id="D2",
-        device_type="web",
-        user_context=base_context,
+    return (
+        95.0,
+        ["HIGH_TRANSACTION_VELOCITY"],
+        ["Multiple transactions detected within a short time window"],
     )
-    res_high = engine.evaluate(txn_high)
-    assert "UNUSUAL_AMOUNT" in res_high["rules_triggered"]
-    assert res_high["behavioral_score"] >= 80.0
-    print("All RuleEngine contract and unit tests passed.")
 
+
+def _receiver(transaction: Transaction, is_new_receiver: bool) -> tuple[float, list[str], list[str]]:
+    score = 5.0
+    rules: list[str] = []
+    reasons: list[str] = []
+
+    if is_new_receiver or transaction.user_context.previous_transaction_count == 0:
+        score += 60.0
+        rules.append("NEW_RECEIVER")
+        reasons.append("Receiver has limited transaction history")
+
+    if transaction.receiver_type.strip().lower() not in KNOWN_RECEIVER_TYPES:
+        score += 40.0
+        rules.append("UNKNOWN_RECEIVER_TYPE")
+        reasons.append("Receiver type is not a recognized counterparty category")
+
+    return _clamp(score), rules, reasons
+
+
+def _amount_outside_usual_range(transaction: Transaction) -> bool:
+    usual = transaction.user_context.usual_transaction_range
+    amount = transaction.amount
+    return amount < usual.min or amount > usual.max
+
+
+def _is_nighttime(transaction: Transaction) -> bool:
+    return transaction.timestamp.hour in NIGHTTIME_HOURS
+
+
+def _location_key(transaction: Transaction) -> tuple[float, float] | None:
+    if transaction.location is None:
+        return None
+    if transaction.location.latitude is None or transaction.location.longitude is None:
+        return None
+    return (
+        float(transaction.location.latitude),
+        float(transaction.location.longitude),
+    )
+
+
+def _is_new_location(history_locations: set[tuple[float, float]], current: tuple[float, float]) -> bool:
+    if not history_locations:
+        return False
+    for latitude, longitude in history_locations:
+        if (
+            abs(current[0] - latitude) < LOCATION_SHIFT_DEGREES
+            and abs(current[1] - longitude) < LOCATION_SHIFT_DEGREES
+        ):
+            return False
+    return True
+
+
+def _behavioral(
+    transaction: Transaction,
+    is_new_device: bool,
+    is_new_location: bool,
+) -> tuple[float, list[str], list[str]]:
+    score = 5.0
+    rules: list[str] = []
+    reasons: list[str] = []
+
+    if _amount_outside_usual_range(transaction):
+        score += 55.0
+        rules.append("UNUSUAL_AMOUNT")
+        reasons.append("Amount differs significantly from user's normal behavior")
+
+    if is_new_device:
+        score += 35.0
+        rules.append("NEW_DEVICE")
+        reasons.append("Transaction originated from a device not previously seen for this user")
+
+    if is_new_location:
+        score += 30.0
+        rules.append("NEW_LOCATION")
+        reasons.append("Transaction location differs from the user's observed locations")
+
+    if _is_nighttime(transaction):
+        score += 25.0
+        rules.append("UNUSUAL_HOUR")
+        reasons.append("Transaction occurred outside the user's typical daytime window")
+
+    return _clamp(score), rules, reasons
+
+
+def _history_flags(transaction: Transaction) -> tuple[bool, bool, bool]:
+    history = observe_user(transaction)
+    has_prior_history = transaction.user_context.previous_transaction_count > 0
+    seen_user = bool(history.device_ids or history.receiver_ids)
+
+    is_new_receiver = False
+    is_new_device = False
+    is_new_location = False
+    current_location = _location_key(transaction)
+
+    if not seen_user:
+        if not has_prior_history:
+            is_new_receiver = True
+            is_new_device = True
+        history.device_ids.add(transaction.device_id)
+        history.receiver_ids.add(transaction.receiver_id)
+        if current_location is not None:
+            history.locations.add(current_location)
+        return is_new_receiver, is_new_device, is_new_location
+
+    if transaction.receiver_id not in history.receiver_ids:
+        is_new_receiver = True
+        history.receiver_ids.add(transaction.receiver_id)
+
+    if transaction.device_id not in history.device_ids:
+        is_new_device = True
+        history.device_ids.add(transaction.device_id)
+
+    if current_location is not None:
+        is_new_location = _is_new_location(history.locations, current_location)
+        history.locations.add(current_location)
+
+    return is_new_receiver, is_new_device, is_new_location
+
+
+def evaluate_rules(transaction: Transaction) -> RuleEngineResult:
+    is_new_receiver, is_new_device, is_new_location = _history_flags(transaction)
+
+    velocity_score, velocity_rules, velocity_reasons = _velocity(transaction)
+    receiver_score, receiver_rules, receiver_reasons = _receiver(
+        transaction, is_new_receiver
+    )
+    behavioral_score, behavioral_rules, behavioral_reasons = _behavioral(
+        transaction, is_new_device, is_new_location
+    )
+
+    return RuleEngineResult(
+        velocity_score=velocity_score,
+        receiver_score=receiver_score,
+        behavioral_score=behavioral_score,
+        rules_triggered=velocity_rules + receiver_rules + behavioral_rules,
+        reason_codes=velocity_reasons + receiver_reasons + behavioral_reasons,
+    )
