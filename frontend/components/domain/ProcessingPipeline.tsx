@@ -68,9 +68,39 @@ export function ProcessingPipeline({
   const currentStepIndex = currentStep
     ? PROCESSING_STEPS.findIndex((s) => s.step === currentStep)
     : -1;
+  const progress = isProcessing
+    ? Math.max(4, ((currentStepIndex + 1) / PROCESSING_STEPS.length) * 100)
+    : 100;
+  const activeItem = PROCESSING_STEPS[currentStepIndex];
 
   return (
-    <Card>
+    <Card className="overflow-hidden">
+      <div className="mb-6 flex items-end justify-between gap-4">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-widest text-accent-blue">
+            Live evaluation stream
+          </p>
+          <h2 className="mt-1 text-lg font-semibold text-text-primary">
+            {isProcessing ? activeItem?.label || "Starting analysis" : "Analysis complete"}
+          </h2>
+          <p className="mt-1 text-sm text-text-tertiary">
+            {isProcessing
+              ? activeItem?.description || "Preparing transaction signals"
+              : "All SentinelAI checks have finished"}
+          </p>
+        </div>
+        <span className="shrink-0 font-mono text-sm text-text-secondary">
+          {Math.round(progress)}%
+        </span>
+      </div>
+
+      <div className="mb-6 h-1.5 overflow-hidden rounded-full bg-background-tertiary">
+        <div
+          className="h-full rounded-full bg-accent-blue transition-all duration-500"
+          style={{ width: `${progress}%` }}
+        />
+      </div>
+
       <div className="space-y-3">
         {PROCESSING_STEPS.map((item, index) => {
           const isCompleted = index < currentStepIndex;
@@ -117,6 +147,9 @@ export function ProcessingPipeline({
                     Processing
                   </span>
                 </div>
+              )}
+              {!isCurrent && !isCompleted && isProcessing && (
+                <span className="text-xs text-text-tertiary">Queued</span>
               )}
             </div>
           );

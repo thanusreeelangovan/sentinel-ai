@@ -15,6 +15,18 @@ import { transactionAPI } from "@/lib/api";
 import type { TransactionDetail, ProcessingStep } from "@/lib/types";
 import { formatCurrency, formatDateTime } from "@/lib/utils";
 
+const PROCESSING_STEPS: ProcessingStep[] = [
+  "received",
+  "intercepted",
+  "behavioral_analysis",
+  "salami_detection",
+  "risk_calculation",
+  "decision_engine",
+  "completed",
+];
+
+const STEP_DURATION_MS = 800;
+
 function TransactionProcessing() {
   const searchParams = useSearchParams();
   const transactionId = searchParams.get("transactionId");
@@ -29,16 +41,6 @@ function TransactionProcessing() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const processingSteps: ProcessingStep[] = [
-    "received",
-    "intercepted",
-    "behavioral_analysis",
-    "salami_detection",
-    "risk_calculation",
-    "decision_engine",
-    "completed",
-  ];
-
   useEffect(() => {
     const loadTransaction = async () => {
       if (!transactionId) {
@@ -51,9 +53,9 @@ function TransactionProcessing() {
         setLoading(true);
 
         // Simulate processing pipeline
-        for (let i = 0; i < processingSteps.length; i++) {
-          setProcessingStep(processingSteps[i]);
-          await new Promise((resolve) => setTimeout(resolve, 800));
+        for (let i = 0; i < PROCESSING_STEPS.length; i++) {
+          setProcessingStep(PROCESSING_STEPS[i]);
+          await new Promise((resolve) => setTimeout(resolve, STEP_DURATION_MS));
         }
 
         // Load actual transaction
