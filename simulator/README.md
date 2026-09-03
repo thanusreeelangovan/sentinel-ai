@@ -44,3 +44,11 @@ Transaction Simulator
    PostgreSQL
         ↓
     Dashboard
+
+## Current Status
+
+- Phase 1 backend completed
+- Decision Engine integrated
+- Risk Engine integration in progress
+- ML integration in progress
+- Frontend integration in progress
