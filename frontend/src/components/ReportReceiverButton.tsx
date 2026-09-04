@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ShieldAlert, CheckCircle2, XCircle, Loader2, Flag } from 'lucide-react';
 
 export interface ReportTransactionContext {
@@ -31,6 +31,60 @@ export interface ReportReceiverButtonProps {
 
 type SubmissionState = 'idle' | 'confirming' | 'loading' | 'success' | 'error';
 
+async function submitReceiverReport(
+  payload: Record<string, unknown>,
+  currentUserId: string,
+): Promise<{ status: number; data: Record<string, unknown> }> {
+  const urls = ['/reports', 'http://127.0.0.1:8000/reports', 'http://localhost:8000/reports'];
+  let lastStatus = 0;
+  let lastData: Record<string, unknown> = {};
+
+  for (const url of urls) {
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          'X-Authenticated-User-Id': currentUserId,
+        },
+        body: JSON.stringify(payload),
+      });
+      const data = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+      lastStatus = response.status;
+      lastData = data;
+      if (response.status !== 404) {
+        return { status: response.status, data };
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  return { status: lastStatus || 0, data: lastData };
+}
+
+function reportStorageKey(userId: string): string {
+  return `sentinelai.receiver-report.${userId}`;
+}
+
+function formatApiDetail(detail: unknown, fallback: string): string {
+  if (typeof detail === 'string' && detail.trim()) {
+    return detail;
+  }
+  if (Array.isArray(detail)) {
+    const parts = detail.map((item) => {
+      if (typeof item === 'string') return item;
+      if (item && typeof item === 'object' && 'msg' in item) {
+        return String((item as { msg: string }).msg);
+      }
+      return '';
+    }).filter(Boolean);
+    if (parts.length) return parts.join(' ');
+  }
+  return fallback;
+}
+
 export const ReportReceiverButton: React.FC<ReportReceiverButtonProps> = ({
   currentUserId,
   senderId,
@@ -42,9 +96,20 @@ export const ReportReceiverButton: React.FC<ReportReceiverButtonProps> = ({
   onReportSubmitted,
   className = '',
 }) => {
-  const [state, setState] = useState<SubmissionState>('idle');
+  const existingReportId = typeof window !== 'undefined'
+    ? window.localStorage.getItem(reportStorageKey(currentUserId || senderId))
+    : null;
+  const [state, setState] = useState<SubmissionState>(existingReportId ? 'success' : 'idle');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [reportId, setReportId] = useState<string | null>(null);
+  const [reportId, setReportId] = useState<string | null>(existingReportId);
+
+  useEffect(() => {
+    const stored = window.localStorage.getItem(reportStorageKey(currentUserId || senderId));
+    if (stored) {
+      setReportId(stored);
+      setState('success');
+    }
+  }, [currentUserId, senderId]);
 
   // 1. Authorization: Only the initiating sender may view/action the report button
   const effectiveCurrentUserId = currentUserId || senderId;
@@ -88,35 +153,35 @@ export const ReportReceiverButton: React.FC<ReportReceiverButtonProps> = ({
         risk_score: riskAssessment!.composite_score,
       };
 
-      const response = await fetch(`${apiBaseUrl}/reports`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Authenticated-User-Id': currentUserId,
-        },
-        body: JSON.stringify(payload),
-      });
+      const { status, data } = await submitReceiverReport(payload, currentUserId || senderId);
 
-      const data = await response.json();
-
-      if (response.status === 201) {
-        setReportId(data.report_id);
+      if (status === 201 || status === 200) {
+        const id = String(data.report_id || '');
+        setReportId(id);
         setState('success');
-        onReportSubmitted?.(data.report_id);
-      } else if (response.status === 409) {
-        setErrorMessage(data.detail || 'This receiver has already been reported for this transaction.');
+        if (id) {
+          window.localStorage.setItem(reportStorageKey(senderId || currentUserId), id);
+        }
+        onReportSubmitted?.(id);
+      } else if (status === 409) {
+        const storedId = String(data.report_id || window.localStorage.getItem(reportStorageKey(senderId || currentUserId)) || 'ALREADY-FILED');
+        window.localStorage.setItem(reportStorageKey(senderId || currentUserId), storedId);
+        setReportId(storedId);
+        setState('success');
+      } else if (status === 401 || status === 403) {
+        setErrorMessage(formatApiDetail(data.detail, 'Unauthorized: Only the authentic transaction sender can file this report.'));
         setState('error');
-      } else if (response.status === 401 || response.status === 403) {
-        setErrorMessage(data.detail || 'Unauthorized: Only the authentic transaction sender can file this report.');
+      } else if (status === 422) {
+        setErrorMessage(formatApiDetail(data.detail, 'Report rejected: Receiver does not meet the extreme risk criteria.'));
         setState('error');
-      } else if (response.status === 422) {
-        setErrorMessage(data.detail || 'Report rejected: Receiver does not meet the extreme risk criteria.');
+      } else if (status === 429) {
+        setErrorMessage(formatApiDetail(data.detail, 'Too many reports submitted. Please wait before trying again.'));
         setState('error');
-      } else if (response.status === 429) {
-        setErrorMessage(data.detail || 'Too many reports submitted. Please wait before trying again.');
+      } else if (status === 404) {
+        setErrorMessage(formatApiDetail(data.detail, 'Reporting service was not found. Confirm FastAPI is running on port 8000.'));
         setState('error');
       } else {
-        setErrorMessage(data.detail || 'Failed to submit report. Please try again later.');
+        setErrorMessage(formatApiDetail(data.detail, 'Failed to submit report. Please try again later.'));
         setState('error');
       }
     } catch (err: unknown) {
