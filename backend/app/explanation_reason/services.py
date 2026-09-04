@@ -19,8 +19,19 @@ from app.risk.weights import (
     RECEIVER_WEIGHT,
     VELOCITY_WEIGHT,
 )
-from app.schemas.evaluate import EvaluateResponse, ExplanationSignal, RiskBreakdown
+from app.schemas.evaluate import EvaluateResponse, RiskBreakdown
 from app.schemas.reads import TransactionRead
+
+MINIMAL_LABELS: dict[str, str] = {
+    "HIGH_ANOMALY": "an unusual pattern",
+    "HIGH_TRANSACTION_VELOCITY": "high payment velocity",
+    "NEW_RECEIVER": "a new beneficiary",
+    "UNKNOWN_RECEIVER_TYPE": "an unfamiliar beneficiary",
+    "UNUSUAL_AMOUNT": "an unusual amount",
+    "NEW_DEVICE": "an unfamiliar device",
+    "NEW_LOCATION": "an unusual location",
+    "UNUSUAL_HOUR": "an unusual time",
+}
 
 SIGNAL_DESCRIPTIONS: dict[str, str] = {
     "HIGH_ANOMALY": "the transaction pattern is highly anomalous compared with the user's history",
@@ -207,7 +218,9 @@ def generate_detailed_explanation(
         decision=mapped,
         engine_decision=engine_decision_from(decision, risk_score=risk_score),
         risk_score=risk_score,
-        summary=_summary_text(mapped, factors),
+        summary=_detailed_analysis_text(
+            risk_score, factors, risk_breakdown, format_shap_contributions(shap_features)
+        ),
         factors=factors,
         shap_features=format_shap_contributions(shap_features),
         risk_breakdown=risk_breakdown,
@@ -356,36 +369,73 @@ def _join_clauses(clauses: Sequence[str]) -> str:
     return f"{', '.join(clauses[:-1])}, and {clauses[-1]}"
 
 
+def _format_score(risk_score: float) -> str:
+    return f"{float(risk_score):.2f}"
+
+
+def _minimal_clauses(factors: Sequence[RiskFactor]) -> list[str]:
+    clauses: list[str] = []
+    for factor in factors:
+        label = MINIMAL_LABELS.get(factor.feature)
+        if label is None:
+            continue
+        clauses.append(label)
+        if len(clauses) == 2:
+            break
+    return clauses
+
+
 def _minimal_text(
     decision: ExplanationDecision, factors: Sequence[RiskFactor]
 ) -> Optional[str]:
     if decision == "APPROVE" and not factors:
         return None
-    clauses = _clauses(factors)
+    clauses = _minimal_clauses(factors)
     if not clauses:
         if decision == "APPROVE":
             return None
-        return "This transaction was flagged because the composite risk score exceeded the safe threshold."
-    return f"This transaction was flagged because {_join_clauses(clauses)}."
+        return "This transaction was flagged due to elevated risk."
+    return f"This transaction was flagged due to {_join_clauses(clauses)}."
 
 
-def _summary_text(
-    decision: ExplanationDecision, factors: Sequence[RiskFactor]
+def _detailed_analysis_text(
+    risk_score: float,
+    factors: Sequence[RiskFactor],
+    risk_breakdown: Optional[RiskBreakdown] = None,
+    shap_features: Optional[Sequence[ShapFeatureContribution]] = None,
 ) -> str:
-    if decision == "APPROVE" and not factors:
-        return "No risk concerns were detected."
-    clauses = _clauses(factors)
-    if not clauses:
-        if decision == "HIGH_RISK":
-            return "This transaction was classified as high risk."
-        if decision == "MEDIUM_RISK":
-            return "This transaction differs from the user's normal payment behaviour."
-        return "No risk concerns were detected."
-    if decision == "HIGH_RISK":
-        return f"High-risk signals were detected because {_join_clauses(clauses)}."
-    if decision == "MEDIUM_RISK":
-        return f"This transaction differs from the user's normal payment behaviour because {_join_clauses(clauses)}."
-    return f"Minor signals were recorded: {_join_clauses(clauses)}."
+    score = _format_score(risk_score)
+    parts = [
+        f"SentinelAI performed analysis and evaluated the risk score as {score}."
+    ]
+    if not factors:
+        parts.append("No unusual anomalies were detected.")
+    else:
+        factor_bits = []
+        for factor in factors:
+            impact = (
+                f" (impact {factor.impact:.4f})"
+                if factor.impact is not None
+                else ""
+            )
+            factor_bits.append(f"{factor.feature}: {factor.description.rstrip('.')}{impact}")
+        parts.append("Detected factors: " + "; ".join(factor_bits) + ".")
+    if risk_breakdown is not None:
+        parts.append(
+            "Risk components: "
+            f"anomaly {float(risk_breakdown.anomaly):.1f}, "
+            f"velocity {float(risk_breakdown.velocity):.1f}, "
+            f"receiver {float(risk_breakdown.receiver):.1f}, "
+            f"behavioural {float(risk_breakdown.behavioral):.1f}."
+        )
+    if shap_features:
+        contrib_bits = [
+            f"{item.feature} {item.contribution:+.4f}"
+            for item in shap_features
+        ][:8]
+        if contrib_bits:
+            parts.append("Feature contributions: " + ", ".join(contrib_bits) + ".")
+    return " ".join(parts)
 
 
 def _coerce_shap_item(item: Any) -> Optional[ShapFeatureContribution]:
@@ -403,175 +453,20 @@ def _coerce_shap_item(item: Any) -> Optional[ShapFeatureContribution]:
     return None
 
 
-SIGNAL_COPY: dict[str, dict[str, str]] = {
-    "HIGH_ANOMALY": {
-        "name": "Unusual Pattern",
-        "short_explanation": "This payment looks different from your usual activity.",
-        "detailed_explanation": "Several aspects of this payment differ from how this account usually pays, which increased the risk rating.",
-        "summary_clause": "an unusual payment pattern",
-    },
-    "HIGH_TRANSACTION_VELOCITY": {
-        "name": "Transaction Velocity",
-        "short_explanation": "Payments are happening more often than usual.",
-        "detailed_explanation": "This account has made more payments in a short period than it typically does, which increased the risk rating.",
-        "summary_clause": "higher than usual payment frequency",
-    },
-    "NEW_RECEIVER": {
-        "name": "New Beneficiary",
-        "short_explanation": "The recipient is new to this account.",
-        "detailed_explanation": "The recipient has not previously received payments from this account, increasing the transaction's risk.",
-        "summary_clause": "a new beneficiary",
-    },
-    "UNKNOWN_RECEIVER_TYPE": {
-        "name": "Unfamiliar Beneficiary",
-        "short_explanation": "The recipient type is not one this account usually pays.",
-        "detailed_explanation": "The recipient category is not among the types this account typically pays, which increased the risk rating.",
-        "summary_clause": "an unfamiliar beneficiary type",
-    },
-    "UNUSUAL_AMOUNT": {
-        "name": "Unusual Amount",
-        "short_explanation": "The transaction amount is higher than usual.",
-        "detailed_explanation": "The transaction amount is significantly higher than the user's historical payment behaviour.",
-        "summary_clause": "an unusually high amount",
-    },
-    "NEW_DEVICE": {
-        "name": "Device Behaviour",
-        "short_explanation": "This payment came from a device not usually used on this account.",
-        "detailed_explanation": "The transaction originated from a device that has not been recently associated with the account.",
-        "summary_clause": "an unfamiliar device",
-    },
-    "NEW_LOCATION": {
-        "name": "Unusual Location",
-        "short_explanation": "This payment was made from a location this account does not usually use.",
-        "detailed_explanation": "The payment location differs from locations previously seen for this account, which increased the risk rating.",
-        "summary_clause": "an unusual location",
-    },
-    "UNUSUAL_HOUR": {
-        "name": "Unusual Time",
-        "short_explanation": "This payment was made at an unusual time of day.",
-        "detailed_explanation": "The payment occurred outside this account's typical hours, which increased the risk rating.",
-        "summary_clause": "an unusual time of day",
-    },
-}
-
-RECOMMENDED_ACTION = {
-    "LOW": "No additional authentication is required.",
-    "MEDIUM": "Additional authentication is required before completing the payment.",
-    "HIGH": "Additional high-risk authentication is required before completing the payment.",
-}
-
-
 def generate_smartphone_explanation(
     *,
     risk_level: str,
     reason_codes: Optional[Sequence[str]] = None,
     risk_breakdown: Optional[RiskBreakdown] = None,
-) -> tuple[str, str, str, list[ExplanationSignal]]:
-    """Build user-facing summary, detailed reasoning, and per-signal copy.
-
-    Uses only signals already produced by the existing risk/rule engines.
-    """
-
-    level = risk_level.upper() if risk_level else "LOW"
-    if level not in RECOMMENDED_ACTION:
-        level = "LOW"
-    codes = [code for code in (reason_codes or []) if code]
-    signals = _explanation_signals(codes, risk_breakdown, level)
-
-    if level == "LOW" and not signals:
-        summary = "No significant anomalous signals were detected."
-        detailed = (
-            "No significant anomalous signals were detected. "
-            "The payment matches this account's usual behaviour."
-        )
-        return summary, detailed, RECOMMENDED_ACTION["LOW"], []
-
-    clauses = [
-        SIGNAL_COPY[code]["summary_clause"]
-        for code in codes
-        if code in SIGNAL_COPY
-    ]
-    if not clauses and signals:
-        clauses = [signal.name.lower() for signal in signals]
-    joined = _join_clauses(clauses) if clauses else "unusual payment behaviour"
-
-    if level == "HIGH":
-        summary = f"This transaction was flagged as high risk because it involves {joined}."
-        detailed = (
-            f"The transaction was classified as high risk because {joined}. "
-            + " ".join(signal.detailed_explanation for signal in signals)
-        )
-    else:
-        summary = f"This transaction appears unusual because it involves {joined}."
-        detailed = (
-            f"The transaction was classified as medium risk because multiple "
-            f"behavioural and transactional signals deviated from the user's normal pattern. "
-            f"It involves {joined}."
-        )
-
-    return summary, detailed, RECOMMENDED_ACTION[level], signals
-
-
-def _signal_severity(
-    code: str,
-    risk_breakdown: Optional[RiskBreakdown],
-    risk_level: str,
+    risk_score: float = 0.0,
+    shap_features: Optional[Iterable[Any]] = None,
 ) -> str:
-    if risk_breakdown is None:
-        return risk_level if risk_level in {"LOW", "MEDIUM", "HIGH"} else "MEDIUM"
-    component = SIGNAL_TO_COMPONENT.get(code)
-    if component is None:
-        return risk_level
-    score = float(getattr(risk_breakdown, component))
-    if score > 75:
-        return "HIGH"
-    if score > 40:
-        return "MEDIUM"
-    return "LOW"
+    """Build the View-button analysis text from existing engine signals."""
 
-
-def _explanation_signals(
-    codes: Sequence[str],
-    risk_breakdown: Optional[RiskBreakdown],
-    risk_level: str,
-) -> list[ExplanationSignal]:
-    seen: set[str] = set()
-    items: list[ExplanationSignal] = []
-    for code in codes:
-        copy = SIGNAL_COPY.get(code)
-        if copy is None or code in seen:
-            continue
-        seen.add(code)
-        items.append(
-            ExplanationSignal(
-                name=copy["name"],
-                severity=_signal_severity(code, risk_breakdown, risk_level),
-                short_explanation=copy["short_explanation"],
-                detailed_explanation=copy["detailed_explanation"],
-            )
-        )
-    if items:
-        return items
-    if risk_level == "LOW":
-        return []
-    for factor in _factors_from_breakdown(risk_breakdown):
-        copy = SIGNAL_COPY.get(
-            {
-                "anomaly": "HIGH_ANOMALY",
-                "velocity": "HIGH_TRANSACTION_VELOCITY",
-                "receiver": "NEW_RECEIVER",
-                "behavioral": "UNUSUAL_AMOUNT",
-            }.get(factor.feature, ""),
-            None,
-        )
-        if copy is None:
-            continue
-        items.append(
-            ExplanationSignal(
-                name=copy["name"],
-                severity=risk_level if risk_level in {"LOW", "MEDIUM", "HIGH"} else "MEDIUM",
-                short_explanation=copy["short_explanation"],
-                detailed_explanation=copy["detailed_explanation"],
-            )
-        )
-    return items
+    factors = format_risk_signals(reason_codes, None, risk_breakdown)
+    return _detailed_analysis_text(
+        risk_score,
+        factors,
+        risk_breakdown,
+        format_shap_contributions(shap_features),
+    )

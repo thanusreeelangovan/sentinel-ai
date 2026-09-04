@@ -5,9 +5,11 @@ from app.db.session import get_db
 from app.explanation_reason.schemas import DetailedExplanation
 from app.schemas.evaluate import EvaluateResponse
 from app.schemas.reads import TransactionRead
+from app.schemas.report import TransactionReportResponse
 from app.schemas.transaction import Transaction
 from app.services.evaluate import evaluate_transaction
 from app.services.queries import get_risk_details, get_transaction, list_transactions
+from app.services.report import report_transaction
 
 router = APIRouter()
 
@@ -24,6 +26,23 @@ def post_evaluate_transaction(
 @router.get("/transactions", response_model=list[TransactionRead])
 def get_transactions(db: Session = Depends(get_db)) -> list[TransactionRead]:
     return list_transactions(db)
+
+
+@router.post(
+    "/transactions/{transaction_id}/report",
+    response_model=TransactionReportResponse,
+)
+def post_transaction_report(
+    transaction_id: str,
+    db: Session = Depends(get_db),
+) -> TransactionReportResponse:
+    result = report_transaction(db, transaction_id)
+    if result is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Transaction not found",
+        )
+    return result
 
 
 @router.get(

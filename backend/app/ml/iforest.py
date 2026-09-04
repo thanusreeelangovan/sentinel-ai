@@ -2,7 +2,7 @@ import numpy as np
 from sklearn.ensemble import IsolationForest
 
 from app.ml.baseline import load_training_transactions
-from app.ml.features import extract_features
+from app.ml.features import FEATURE_NAMES, extract_features
 from app.ml.schemas import AnomalyResult
 from app.schemas.transaction import Transaction
 
@@ -21,6 +21,7 @@ class IsolationForestService:
         )
         self._raw_min = 0.0
         self._raw_max = 1.0
+        self._train_mean: np.ndarray | None = None
         self._train()
 
     def _train(self) -> None:
@@ -30,6 +31,7 @@ class IsolationForestService:
         ]
         training_features = np.array(training_rows, dtype=float)
         self._model.fit(training_features)
+        self._train_mean = training_features.mean(axis=0)
         raw_scores = -self._model.decision_function(training_features)
         self._raw_min = float(np.min(raw_scores))
         self._raw_max = float(np.max(raw_scores))
@@ -49,6 +51,30 @@ class IsolationForestService:
             model_version=self.model_version,
             model_status=self.model_status,
         )
+
+    def feature_contributions(self, transaction: Transaction) -> list[dict[str, float | str]]:
+        """Ablate each feature to the training mean to measure model contribution.
+
+        These are model-based contributions from the fitted detector, not invented values.
+        """
+
+        if self._train_mean is None:
+            return []
+        features = np.array(extract_features(transaction), dtype=float)
+        base = float(-self._model.decision_function(features.reshape(1, -1))[0])
+        contributions: list[dict[str, float | str]] = []
+        for index, name in enumerate(FEATURE_NAMES):
+            perturbed = features.copy()
+            perturbed[index] = float(self._train_mean[index])
+            restored = float(-self._model.decision_function(perturbed.reshape(1, -1))[0])
+            contributions.append(
+                {
+                    "feature": name,
+                    "contribution": round(base - restored, 4),
+                }
+            )
+        contributions.sort(key=lambda item: abs(float(item["contribution"])), reverse=True)
+        return contributions[:8]
 
 
 _service: IsolationForestService | None = None
