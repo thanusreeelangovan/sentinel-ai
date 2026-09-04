@@ -5,9 +5,45 @@
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%230F766E'%3E%3Cpath d='M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 2.18l7 3.12v4.7c0 4.67-3.13 9.04-7 10.15-3.87-1.11-7-5.48-7-10.15V6.3l7-3.12z'/%3E%3C/svg%3E" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>SentinelAI | Real-time Pre-Authorization Fraud Interception Engine</title>
+    
+    <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- Standalone Tailwind Engine (Guarantees Instant Rendering in all environments) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              sentinel: {
+                bg: '#FDFBF7',
+                surface: '#FFFFFF',
+                card: '#FFFFFF',
+                cardSubtle: '#FBF8F2',
+                border: '#E7E5E4',
+                borderFocused: '#C2410C',
+                primary: '#C2410C',
+                primaryHover: '#9A3412',
+                primaryLight: '#FB923C',
+                textPrimary: '#1C1917',
+                textSecondary: '#57534E',
+                textMuted: '#78716C',
+                warning: '#D97706',
+                danger: '#DC2626',
+                success: '#15803D'
+              }
+            },
+            fontFamily: {
+              mono: ['JetBrains Mono', 'monospace'],
+              sans: ['Plus Jakarta Sans', 'sans-serif'],
+            }
+          }
+        }
+      }
+    </script>
   </head>
   <body class="antialiased overflow-x-hidden min-h-screen">
     <div id="root"></div>
