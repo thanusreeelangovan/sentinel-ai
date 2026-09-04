@@ -7,6 +7,12 @@ export default defineConfig({
   server: {
     port: 3000,
     host: true,
+    proxy: {
+      '/reports': { target: 'http://127.0.0.1:8000', changeOrigin: true },
+      '/evaluate': { target: 'http://127.0.0.1:8000', changeOrigin: true },
+      '/transactions': { target: 'http://127.0.0.1:8000', changeOrigin: true },
+      '/health': { target: 'http://127.0.0.1:8000', changeOrigin: true },
+    },
   },
   preview: {
     port: 3000,
