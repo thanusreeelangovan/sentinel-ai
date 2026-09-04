@@ -7,6 +7,10 @@ from app.ml.iforest import score_anomaly
 from app.risk.decision import decide
 from app.risk.engine import RiskSignals, calculate_risk
 from app.risk.thresholds import APPROVE_MAX_SCORE, VERIFY_MAX_SCORE
+from app.explanation_reason.services import (
+    generate_minimal_explanation,
+    generate_smartphone_explanation,
+)
 from app.rules.engine import evaluate_rules
 from app.schemas.evaluate import EvaluateResponse, EvaluationSignals
 from app.schemas.rules import RuleEngineResult
@@ -109,10 +113,28 @@ def evaluate_transaction(transaction: Transaction, db: Session) -> EvaluateRespo
     if anomaly.anomaly_score >= HIGH_ANOMALY_THRESHOLD:
         reason_codes.insert(0, "HIGH_ANOMALY")
     decision = decide(risk.composite_score)
+    rule_texts = list(rules.reason_codes)
+    minimal = generate_minimal_explanation(
+        decision=decision,
+        reason_codes=reason_codes,
+        reason_texts=rule_texts,
+        risk_breakdown=risk.risk_breakdown,
+        risk_score=risk.composite_score,
+        transaction_id=transaction.transaction_id,
+    )
+    risk_level = _risk_level(risk.composite_score)
+    summary, detailed_reasoning, recommended_action, explanation_signals = (
+        generate_smartphone_explanation(
+            risk_level=risk_level,
+            reason_codes=reason_codes,
+            risk_breakdown=risk.risk_breakdown,
+        )
+    )
     response = EvaluateResponse(
         transaction_id=transaction.transaction_id,
         composite_score=risk.composite_score,
         decision=decision,
+        risk_level=risk_level,
         risk_level=_risk_level(risk.composite_score),
         risk_breakdown=risk.risk_breakdown,
         reason_codes=reason_codes,
@@ -121,6 +143,7 @@ def evaluate_transaction(transaction: Transaction, db: Session) -> EvaluateRespo
             risk.composite_score,
             decision,
             reason_codes,
+            rule_texts,
             list(rules.reason_codes),
         ),
         policy_applied=POLICY_BY_DECISION[decision],
@@ -129,6 +152,11 @@ def evaluate_transaction(transaction: Transaction, db: Session) -> EvaluateRespo
         latency_ms=max(1, round((perf_counter() - started) * 1000)),
         signals=_build_signals(transaction, rules, risk.composite_score),
         risk_score=risk.composite_score,
+        minimal_explanation=minimal.explanation,
+        summary=summary,
+        detailed_reasoning=detailed_reasoning,
+        recommended_action=recommended_action,
+        explanation_signals=explanation_signals,
     )
     persist_evaluation(db, transaction, rules, anomaly, response)
     db.commit()
