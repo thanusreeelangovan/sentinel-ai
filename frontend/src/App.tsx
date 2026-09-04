@@ -1,11 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Header, ThemeName } from './components/Header';
+import { Header } from './components/Header';
 import { PhoneSimulator } from './components/PhoneSimulator';
 import { TelemetryDeck } from './components/TelemetryDeck';
 import { RiskPopups } from './components/RiskPopups';
 import { FestiveCelebration } from './components/FestiveCelebration';
-import { CustomSandbox } from './components/CustomSandbox';
-import { ArchitectureBlueprint } from './components/ArchitectureBlueprint';
 import { SharedTransaction, RiskAssessment } from './types/sentinel';
 import { INITIAL_TRANSACTION } from './data/mockData';
 import { 
@@ -15,11 +13,8 @@ import {
 } from './services/apiClient';
 
 export const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'simulator' | 'sandbox' | 'architecture'>('simulator');
-  const [currentTheme, setCurrentTheme] = useState<ThemeName>('warm-copper');
   const [transaction, setTransaction] = useState<SharedTransaction>(INITIAL_TRANSACTION);
   const [assessment, setAssessment] = useState<RiskAssessment | null>(null);
-  const [evaluatedCount, setEvaluatedCount] = useState<number>(0);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [pipelineStep, setPipelineStep] = useState<number>(0);
 
@@ -33,11 +28,6 @@ export const App: React.FC = () => {
   const [showHighModal, setShowHighModal] = useState<boolean>(false);
   const [showCelebration, setShowCelebration] = useState<boolean>(false);
   const [isMuted, setIsMuted] = useState<boolean>(false);
-
-  // Synchronize data-theme attribute on document root
-  useEffect(() => {
-    document.documentElement.setAttribute('data-theme', currentTheme);
-  }, [currentTheme]);
 
   // Check Backend Connectivity on Mount
   const handleCheckBackendHealth = useCallback(async () => {
@@ -84,7 +74,6 @@ export const App: React.FC = () => {
     setTimeout(() => {
       setAssessment(result);
       setIsProcessing(false);
-      setEvaluatedCount(prev => prev + 1);
 
       handleLogEvent('RISK_EVALUATION_COMPLETED', { 
         score: result.composite_score, 
@@ -112,27 +101,6 @@ export const App: React.FC = () => {
     handleLogEvent('TRANSACTION_RESET', { action: 'RESET' });
   };
 
-  const handleApplySandboxAssessment = (sandboxAssessment: RiskAssessment, updatedTx: SharedTransaction) => {
-    setTransaction(updatedTx);
-    setAssessment(sandboxAssessment);
-    setEvaluatedCount(prev => prev + 1);
-    setActiveTab('simulator');
-
-    if (sandboxAssessment.composite_score <= 40) {
-      setShowCelebration(true);
-      setShowMediumModal(false);
-      setShowHighModal(false);
-    } else if (sandboxAssessment.composite_score <= 75) {
-      setShowMediumModal(true);
-      setShowHighModal(false);
-      setShowCelebration(false);
-    } else {
-      setShowHighModal(true);
-      setShowMediumModal(false);
-      setShowCelebration(false);
-    }
-  };
-
   return (
     <div 
       className="min-h-screen flex flex-col transition-all duration-300"
@@ -141,64 +109,40 @@ export const App: React.FC = () => {
         color: 'var(--text-primary)'
       }}
     >
-      {/* Top Header Bar with Live Theme Switcher */}
-      <Header
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
-        evaluatedCount={evaluatedCount}
-        currentTheme={currentTheme}
-        onSelectTheme={setCurrentTheme}
-      />
+      {/* Top Header Bar */}
+      <Header />
 
       {/* Main Content Area */}
       <main className="flex-1 w-full max-w-[1780px] mx-auto p-4 lg:p-6">
-        
-        {/* VIEW 1: DEMO SIMULATOR (Default) */}
-        {activeTab === 'simulator' && (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-            
-            {/* Left Column: Phone Simulator (5 cols) */}
-            <div className="lg:col-span-5 flex justify-center sticky top-20">
-              <PhoneSimulator
-                transaction={transaction}
-                setTransaction={setTransaction}
-                assessment={assessment}
-                onExecuteTransaction={handleExecuteTransaction}
-                onReset={handleReset}
-                isProcessing={isProcessing}
-                pipelineStep={pipelineStep}
-                onLogEvent={handleLogEvent}
-              />
-            </div>
-
-            {/* Right Column: Neural Telemetry Deck (7 cols) */}
-            <div className="lg:col-span-7 flex flex-col h-full min-h-[720px]">
-              <TelemetryDeck
-                assessment={assessment}
-                transaction={transaction}
-                isRealBackend={isRealBackend}
-                backendEndpoint={backendEndpoint}
-                onRefreshBackendCheck={handleCheckBackendHealth}
-                backendError={backendError}
-              />
-            </div>
-
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+          
+          {/* Left Column: Phone Simulator (5 cols) */}
+          <div className="lg:col-span-5 flex justify-center sticky top-20">
+            <PhoneSimulator
+              transaction={transaction}
+              setTransaction={setTransaction}
+              assessment={assessment}
+              onExecuteTransaction={handleExecuteTransaction}
+              onReset={handleReset}
+              isProcessing={isProcessing}
+              pipelineStep={pipelineStep}
+              onLogEvent={handleLogEvent}
+            />
           </div>
-        )}
 
-        {/* VIEW 2: CUSTOM SANDBOX */}
-        {activeTab === 'sandbox' && (
-          <CustomSandbox
-            transaction={transaction}
-            onApplySandboxAssessment={handleApplySandboxAssessment}
-          />
-        )}
+          {/* Right Column: Neural Telemetry Deck (7 cols) */}
+          <div className="lg:col-span-7 flex flex-col h-full min-h-[720px]">
+            <TelemetryDeck
+              assessment={assessment}
+              transaction={transaction}
+              isRealBackend={isRealBackend}
+              backendEndpoint={backendEndpoint}
+              onRefreshBackendCheck={handleCheckBackendHealth}
+              backendError={backendError}
+            />
+          </div>
 
-        {/* VIEW 3: ARCHITECTURE & API BLUEPRINT */}
-        {activeTab === 'architecture' && (
-          <ArchitectureBlueprint />
-        )}
-
+        </div>
       </main>
 
       {/* Dynamic Popups */}
