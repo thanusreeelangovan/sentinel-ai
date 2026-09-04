@@ -34,8 +34,15 @@ type SubmissionState = 'idle' | 'confirming' | 'loading' | 'success' | 'error';
 async function submitReceiverReport(
   payload: Record<string, unknown>,
   currentUserId: string,
+  apiBaseUrl?: string,
 ): Promise<{ status: number; data: Record<string, unknown> }> {
-  const urls = ['/reports', 'http://127.0.0.1:8000/reports', 'http://localhost:8000/reports'];
+  const normalizedBase = apiBaseUrl ? apiBaseUrl.replace(/\/+$/, '') : '';
+  const urls = [
+    ...(normalizedBase ? [`${normalizedBase}/reports`] : []),
+    '/reports',
+    'http://127.0.0.1:8000/reports',
+    'http://localhost:8000/reports',
+  ];
   let lastStatus = 0;
   let lastData: Record<string, unknown> = {};
 
@@ -153,7 +160,7 @@ export const ReportReceiverButton: React.FC<ReportReceiverButtonProps> = ({
         risk_score: riskAssessment!.composite_score,
       };
 
-      const { status, data } = await submitReceiverReport(payload, currentUserId || senderId);
+      const { status, data } = await submitReceiverReport(payload, currentUserId || senderId, apiBaseUrl);
 
       if (status === 201 || status === 200) {
         const id = String(data.report_id || '');
