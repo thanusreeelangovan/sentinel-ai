@@ -879,8 +879,24 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
 
             </div>
 
-            {/* Single Clear CTA Button */}
-            <div className="pt-4">
+            {/* Actions: Report Button & Proceed CTA */}
+            <div className="pt-2 space-y-2">
+              <ReportReceiverButton
+                currentUserId={transaction.user_id}
+                senderId={transaction.user_id}
+                receiverId={transaction.receiver_id}
+                receiverName={transaction.receiver_name}
+                riskAssessment={assessment}
+                transactionContext={{
+                  transaction_id: transaction.transaction_id,
+                  amount: transaction.amount,
+                  currency: transaction.currency,
+                  device_id: transaction.device_id,
+                  note: transaction.note
+                }}
+                onReportSubmitted={(repId) => onLogEvent?.('FRAUD_REPORT_SUBMITTED', { report_id: repId })}
+              />
+
               <button
                 type="button"
                 onClick={() => setScreen('step2_pin')}
