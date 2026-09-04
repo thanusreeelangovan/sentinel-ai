@@ -1,19 +1,12 @@
-import sys
-from pathlib import Path
-
 import numpy as np
 from sklearn.ensemble import IsolationForest
 
+from app.ml.baseline import load_training_transactions
 from app.ml.features import extract_features
 from app.ml.schemas import AnomalyResult
 from app.schemas.transaction import Transaction
 
 MODEL_VERSION = "iforest_v1"
-REPO_ROOT = Path(__file__).resolve().parents[3]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
-
-from ml.data.synthetic_baseline import load_training_transactions
 
 
 class IsolationForestService:

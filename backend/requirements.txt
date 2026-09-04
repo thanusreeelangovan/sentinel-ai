@@ -1,8 +1,9 @@
 fastapi
 uvicorn
 pydantic
+numpy
 scikit-learn
-sqlalchemy
+sqlalchemy>=2.0.0
 psycopg2-binary
 python-dotenv
 pytest
