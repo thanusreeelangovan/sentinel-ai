@@ -1,8 +1,13 @@
 import { SharedTransaction, RiskAssessment } from '../types/sentinel';
 import { calculateRiskAssessment } from './riskEngine';
 
-// Default FastAPI backend endpoint
-export const DEFAULT_BACKEND_URL = 'http://localhost:8000/transactions/evaluate';
+const viteEnv = (import.meta as ImportMeta & {
+  env?: { DEV?: boolean; VITE_API_URL?: string };
+}).env;
+const backendBaseUrl = (viteEnv?.VITE_API_URL || (viteEnv?.DEV ? 'http://localhost:8000' : undefined))?.replace(/\/$/, '');
+export const DEFAULT_BACKEND_URL = backendBaseUrl
+  ? `${backendBaseUrl}/transactions/evaluate`
+  : '/transactions/evaluate';
 
 export interface BackendConnectionStatus {
   isConnected: boolean;

@@ -7,6 +7,7 @@ from app.api.accounts import router as accounts_router
 from app.api.dashboard import router as dashboard_router
 from app.api.lookups import router as lookups_router
 from app.api.transactions import router as transactions_router
+from app.core.config import get_cors_origins
 from app.reports import router as reports_router
 from app.db.session import init_db
 from app.ml.iforest import get_iforest_service
@@ -22,7 +23,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex=r"https?://(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|172\.\d+\.\d+\.\d+)(:\d+)?",
+    allow_origins=get_cors_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

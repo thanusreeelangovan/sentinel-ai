@@ -29,6 +29,7 @@ import {
   generateAuditLogs 
 } from '../services/riskEngine';
 import { ReportReceiverButton } from './ReportReceiverButton';
+import { DEFAULT_BACKEND_URL } from '../services/apiClient';
 
 interface TelemetryDeckProps {
   assessment: RiskAssessment | null;
@@ -43,7 +44,7 @@ export const TelemetryDeck: React.FC<TelemetryDeckProps> = ({
   assessment,
   transaction,
   isRealBackend = false,
-  backendEndpoint = 'http://localhost:8000/transactions/evaluate',
+  backendEndpoint = DEFAULT_BACKEND_URL,
   onRefreshBackendCheck,
   backendError: _backendError,
 }) => {

@@ -20,3 +20,11 @@ def get_database_url() -> str:
 
     # Local fallback so the existing app can run without Docker/Postgres.
     return "sqlite:///./sentinelai.db"
+
+
+def get_cors_origins() -> list[str]:
+    configured_origins = os.getenv("CORS_ORIGINS")
+    if configured_origins:
+        return [origin.strip() for origin in configured_origins.split(",") if origin.strip()]
+
+    return ["http://localhost:3000", "http://127.0.0.1:3000"]
