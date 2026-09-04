@@ -1,6 +1,8 @@
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.explanation_reason.schemas import DetailedExplanation
+from app.explanation_reason.services import generate_detailed_explanation_from_result
 from app.models.risk_assessment import RiskAssessment
 from app.models.rule_event import RuleEvent
 from app.models.transaction import TransactionRecord
@@ -16,6 +18,15 @@ from app.schemas.reads import (
 def _reason_codes(db: Session, transaction_id: str) -> list[str]:
     rows = db.scalars(
         select(RuleEvent.rule_code)
+        .where(RuleEvent.transaction_id == transaction_id)
+        .order_by(RuleEvent.created_at.asc())
+    ).all()
+    return list(rows)
+
+
+def _reason_texts(db: Session, transaction_id: str) -> list[str]:
+    rows = db.scalars(
+        select(RuleEvent.reason)
         .where(RuleEvent.transaction_id == transaction_id)
         .order_by(RuleEvent.created_at.asc())
     ).all()
@@ -96,3 +107,14 @@ def get_dashboard_summary(db: Session) -> DashboardSummary:
 
 def get_risk_distribution(db: Session) -> RiskDistribution:
     return RiskDistribution(**_decision_counts(db))
+
+
+def get_risk_details(db: Session, transaction_id: str) -> DetailedExplanation | None:
+    """Explain a persisted evaluation. Does not rerun scoring or decisioning."""
+    result = get_transaction(db, transaction_id)
+    if result is None:
+        return None
+    return generate_detailed_explanation_from_result(
+        result,
+        reason_texts=_reason_texts(db, transaction_id),
+    )
