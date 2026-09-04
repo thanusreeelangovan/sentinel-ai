@@ -195,15 +195,15 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
     onLogEvent?.('FALLBACK_TRIGGERED', { reason: 'NETWORK_TIMEOUT_SIMULATION' });
   };
 
-  // Phone border styling based on anomaly score thresholds
-  let phoneBorderClass = 'border-[var(--border-default)] shadow-[0_24px_60px_-12px_rgba(0,0,0,0.12)]';
+  // Phone dynamic multi-layered glow styling bound to real-time composite_score
+  let phoneBorderClass = 'phone-glow-default';
   if (assessment && (screen === 'result' || screen === 'step2_pin')) {
     if (assessment.composite_score <= 40) {
-      phoneBorderClass = 'border-[var(--primary)] shadow-[0_0_45px_var(--primary-glow)] ring-2 ring-[var(--primary)]/40';
+      phoneBorderClass = 'phone-glow-green';
     } else if (assessment.composite_score <= 75) {
-      phoneBorderClass = 'border-amber-500 shadow-[0_0_40px_rgba(245,158,11,0.45)] ring-2 ring-amber-500/40';
+      phoneBorderClass = 'phone-glow-amber';
     } else {
-      phoneBorderClass = 'border-red-600 shadow-[0_0_50px_rgba(239,68,68,0.55)] ring-2 ring-red-600/50';
+      phoneBorderClass = 'phone-glow-crimson';
     }
   }
 
