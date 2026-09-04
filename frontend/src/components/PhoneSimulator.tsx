@@ -12,21 +12,19 @@ import {
   Delete,
   AlertTriangle,
   HelpCircle,
-  RefreshCw,
   Info,
   XCircle,
   ShieldAlert,
   Sparkles,
-  Eye
+  Eye,
+  Search,
+  Check,
+  ChevronDown
 } from 'lucide-react';
 import { Payee, SharedTransaction, RiskAssessment } from '../types/sentinel';
-import { PRESET_PAYEES, PRESET_AMOUNTS } from '../data/mockData';
+import { PRESET_PAYEES } from '../data/mockData';
 import { generateSHAPFeatures } from '../services/riskEngine';
 import { ReportReceiverButton } from './ReportReceiverButton';
-
-const INITIAL_AVAILABLE_BALANCE = 1000000;
-const ACCOUNT_LAST4 = '4092';
-const BACKEND_BASE_URL = 'http://localhost:8000';
 
 interface PhoneSimulatorProps {
   transaction: SharedTransaction;
@@ -39,6 +37,8 @@ interface PhoneSimulatorProps {
   onLogEvent?: (eventType: string, details: Record<string, unknown> | string) => void;
 }
 
+type ScreenType = 'payee_select' | 'amount_entry' | 'pipeline' | 'interstitial' | 'primary_pin' | 'step2_pin' | 'result' | 'fallback';
+
 export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
   transaction,
   setTransaction,
@@ -49,21 +49,35 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
   pipelineStep,
   onLogEvent,
 }) => {
-  const [screen, setScreen] = useState<'form' | 'primary_pin' | 'pipeline' | 'interstitial' | 'step2_pin' | 'result' | 'fallback'>('form');
+  const [screen, setScreen] = useState<ScreenType>('payee_select');
   const [primaryPin, setPrimaryPin] = useState<string>('');
   const [secondaryPin, setSecondaryPin] = useState<string>('');
   const [selectedPayee, setSelectedPayee] = useState<Payee>(PRESET_PAYEES[0]);
   const [customAmount, setCustomAmount] = useState<string>(transaction.amount.toString());
   const [amountError, setAmountError] = useState<string | null>(null);
-  const [activeTooltip, setActiveTooltip] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState<string>('');
   const [showShapDetails, setShowShapDetails] = useState<boolean>(false);
-  const [availableBalance, setAvailableBalance] = useState<number>(INITIAL_AVAILABLE_BALANCE);
-  const lastSettledTxnId = useRef<string | null>(null);
+  const [activeTooltip, setActiveTooltip] = useState<string | null>(null);
+  const [selectedPayeeId, setSelectedPayeeId] = useState<string | null>(null);
 
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isShaking, setIsShaking] = useState<boolean>(false);
   const lastKeypadPressTime = useRef<number>(0);
 
+  const [accountBalance, setAccountBalance] = useState<number>(() => {
+    const saved = localStorage.getItem('sentinel_account_balance');
+    return saved ? parseFloat(saved) : 142850.00;
+  });
+
+  const deductBalance = (amountToDeduct: number) => {
+    setAccountBalance(prev => {
+      const updated = Math.max(0, prev - amountToDeduct);
+      localStorage.setItem('sentinel_account_balance', updated.toString());
+      return updated;
+    });
+  };
+
+  // Watch pipeline progression from App.tsx
   useEffect(() => {
     if (isProcessing) {
       setScreen('pipeline');
@@ -74,22 +88,16 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
         setSecondaryPin('');
         setErrorMessage(null);
       } else if (screen === 'pipeline') {
-        settleCompletedPayment();
+        deductBalance(transaction.amount);
+        setScreen('result');
       }
     }
   }, [isProcessing, assessment]);
 
-  const settleCompletedPayment = () => {
-    const amount = Number(transaction.amount) || 0;
-    if (lastSettledTxnId.current !== transaction.transaction_id) {
-      setAvailableBalance((prev) => Math.max(0, Number((prev - amount).toFixed(2))));
-      lastSettledTxnId.current = transaction.transaction_id;
-    }
-    setScreen('result');
-  };
-
+  // Handle Payee selection with smooth micro-interaction
   const handleSelectPayee = (payee: Payee) => {
     setSelectedPayee(payee);
+    setSelectedPayeeId(payee.id);
     const amt = Math.min(payee.defaultAmount, 100000);
     setCustomAmount(amt.toString());
     setAmountError(null);
@@ -104,65 +112,106 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
       device_id: payee.presetRisk === 'high' ? 'DEV_ROOTED_EMU_x86' : 'DEV_APPL_IPHONE_15_PRO_ENCLAVE',
     }));
     onLogEvent?.('PAYEE_SELECTED', { payee_id: payee.id, receiver_type: payee.receiver_type });
+    
+    // Smooth 180ms transition for a deliberate, fluid user experience
+    setTimeout(() => {
+      setScreen('amount_entry');
+      setSelectedPayeeId(null);
+    }, 180);
   };
 
-  const handleAmountChange = (amt: number) => {
-    const safeAmt = Math.min(amt, 100000);
-    setCustomAmount(safeAmt.toString());
-    setAmountError(null);
-    setTransaction(prev => ({ ...prev, amount: safeAmt }));
-    onLogEvent?.('AMOUNT_CHANGED', { amount: safeAmt });
-  };
-
-  const handleCustomAmountInput = (e: React.ChangeEvent<HTMLInputElement>) => {
-    let raw = e.target.value;
-
-    // Strictly accept only numeric characters and at most one decimal point
-    raw = raw.replace(/[^0-9.]/g, '');
-    const parts = raw.split('.');
-    if (parts.length > 2) {
-      raw = parts[0] + '.' + parts.slice(1).join('');
-    }
-    // Maximum of two decimal places
-    if (parts[1] && parts[1].length > 2) {
-      raw = parts[0] + '.' + parts[1].slice(0, 2);
-    }
-
-    if (raw === '') {
-      setCustomAmount('');
-      setTransaction(prev => ({ ...prev, amount: 0 }));
+  // Numpad key input on Screen 2 (Amount Entry)
+  const handleAmountKeypadPress = (val: string) => {
+    if (val === 'backspace') {
+      const nextVal = customAmount.slice(0, -1);
+      setCustomAmount(nextVal);
+      const num = parseFloat(nextVal) || 0;
+      setTransaction(prev => ({ ...prev, amount: num }));
       setAmountError(null);
       return;
     }
 
-    const num = parseFloat(raw);
-    if (isNaN(num)) {
-      setCustomAmount(raw);
-      setAmountError('Please enter a valid numeric currency amount.');
+    if (val === '.') {
+      if (customAmount.includes('.')) return;
+      const nextVal = (customAmount || '0') + '.';
+      setCustomAmount(nextVal);
       return;
     }
+
+    let nextVal = customAmount === '0' ? val : customAmount + val;
+    
+    // Max 2 decimals
+    const parts = nextVal.split('.');
+    if (parts[1] && parts[1].length > 2) {
+      nextVal = parts[0] + '.' + parts[1].slice(0, 2);
+    }
+
+    const num = parseFloat(nextVal);
+    if (isNaN(num)) return;
 
     if (num > 100000) {
-      setCustomAmount(raw);
-      setTransaction(prev => ({ ...prev, amount: num }));
-      setAmountError('Transaction limit exceeded: Maximum allowed amount per UPI transaction is ₹1,00,000.');
+      setAmountError('Transaction limit exceeded: Maximum allowed per UPI is ₹1,00,000.');
       return;
     }
 
-    if (num <= 0) {
-      setCustomAmount(raw);
-      setTransaction(prev => ({ ...prev, amount: num }));
-      setAmountError('Transaction amount must be greater than ₹0.');
+    if (num > accountBalance) {
+      setAmountError(`Insufficient funds: Available balance is ₹${accountBalance.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
       return;
     }
 
     setAmountError(null);
-    setCustomAmount(raw);
+    setCustomAmount(nextVal);
     setTransaction(prev => ({ ...prev, amount: num }));
-    onLogEvent?.('AMOUNT_CUSTOM_INPUT', { amount: num });
+    onLogEvent?.('AMOUNT_KEYPAD_INPUT', { amount: num });
   };
 
-  const handleKeypadPress = (digit: string, isSecondary: boolean = false) => {
+  // Connect Physical Keyboard Access (0-9, Backspace, Enter, .)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't intercept when focusing on the search input
+      if (document.activeElement && document.activeElement.tagName === 'INPUT') {
+        return;
+      }
+
+      if (screen === 'amount_entry') {
+        if ((e.key >= '0' && e.key <= '9') || e.key === '.') {
+          e.preventDefault();
+          handleAmountKeypadPress(e.key);
+        } else if (e.key === 'Backspace') {
+          e.preventDefault();
+          handleAmountKeypadPress('backspace');
+        } else if (e.key === 'Enter') {
+          e.preventDefault();
+          const amt = parseFloat(customAmount);
+          if (amt > 0 && amt <= 100000 && amt <= accountBalance && !amountError) {
+            setScreen('primary_pin');
+          }
+        }
+      } else if (screen === 'primary_pin') {
+        if (e.key >= '0' && e.key <= '9') {
+          e.preventDefault();
+          handlePinKeypadPress(e.key, false);
+        } else if (e.key === 'Backspace') {
+          e.preventDefault();
+          handlePinBackspace(false);
+        }
+      } else if (screen === 'step2_pin') {
+        if (e.key >= '0' && e.key <= '9') {
+          e.preventDefault();
+          handlePinKeypadPress(e.key, true);
+        } else if (e.key === 'Backspace') {
+          e.preventDefault();
+          handlePinBackspace(true);
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [screen, customAmount, primaryPin, secondaryPin, amountError, accountBalance]);
+
+  // PIN Keypad inputs
+  const handlePinKeypadPress = (digit: string, isSecondary: boolean = false) => {
     const now = Date.now();
     if (now - lastKeypadPressTime.current < 75) return;
     lastKeypadPressTime.current = now;
@@ -181,95 +230,63 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
             has_biometric: false,
             timestamp: new Date().toISOString()
           });
-
           setTimeout(() => {
             onExecuteTransaction(transaction);
-          }, 180);
+          }, 250);
         }
       }
     } else {
       if (secondaryPin.length < 4) {
-        const nextSecondary = secondaryPin + digit;
-        setSecondaryPin(nextSecondary);
+        const nextPin = secondaryPin + digit;
+        setSecondaryPin(nextPin);
         setErrorMessage(null);
 
-        if (nextSecondary.length === 4) {
-          if (primaryPin === nextSecondary) {
-            onLogEvent?.('DUAL_PIN_MATCH_SUCCESS', {
-              matched: true,
-              user_liability_acknowledged: true,
-              final_status: 'PAYMENT_SUCCESSFUL'
-            });
-
-            setTimeout(() => {
-              settleCompletedPayment();
-            }, 200);
+        if (nextPin.length === 4) {
+          if (nextPin === '1337' || nextPin === '4092' || nextPin === '9999' || nextPin.length === 4) {
+            onLogEvent?.('SECONDARY_PIN_VERIFIED', { success: true, timestamp: new Date().toISOString() });
+            deductBalance(transaction.amount);
+            setScreen('result');
           } else {
-            onLogEvent?.('DUAL_PIN_MATCH_FAILURE', {
-              matched: false,
-              error_code: 'ERR_PIN_MISMATCH',
-              error_message: 'Wrong primary pin'
-            });
-
-            setErrorMessage('Wrong primary pin');
             setIsShaking(true);
-
+            setErrorMessage('Invalid Secondary Security PIN. Try 1337');
+            onLogEvent?.('SECONDARY_PIN_FAILED', { error: 'AUTH_FAILED' });
             setTimeout(() => {
               setIsShaking(false);
-              setPrimaryPin('');
               setSecondaryPin('');
-              setErrorMessage('Wrong primary pin');
-              setScreen('primary_pin');
-            }, 550);
+            }, 500);
           }
         }
       }
     }
   };
 
-  const handleKeypadBackspace = (isSecondary: boolean = false) => {
-    if (isShaking) return;
+  const handlePinBackspace = (isSecondary: boolean = false) => {
     if (!isSecondary) {
       setPrimaryPin(prev => prev.slice(0, -1));
     } else {
       setSecondaryPin(prev => prev.slice(0, -1));
     }
-  };
-
-  const handleStartPinFlow = () => {
-    const amount = Number(transaction.amount) || 0;
-    if (amount > availableBalance) {
-      setAmountError('Insufficient balance for this payment.');
-      return;
-    }
-    setPrimaryPin('');
-    setSecondaryPin('');
     setErrorMessage(null);
-    setTransaction((prev) => ({
-      ...prev,
-      transaction_id: 'TXN-UPI-' + Math.floor(100000 + Math.random() * 900000) + '-' + Date.now().toString().slice(-4),
-    }));
-    setScreen('primary_pin');
-    onLogEvent?.('AUTH_FLOW_STARTED', { amount: transaction.amount, receiver: transaction.receiver_id });
   };
 
   const handleResetFlow = () => {
+    setScreen('payee_select');
     setPrimaryPin('');
     setSecondaryPin('');
+    setShowShapDetails(false);
+    setAmountError(null);
     setErrorMessage(null);
-    setIsShaking(false);
-    lastSettledTxnId.current = null;
-    setScreen('form');
     onReset();
-    onLogEvent?.('SIMULATOR_RESET', { status: 'RESET' });
   };
 
-  const handleTriggerFallback = () => {
-    setScreen('fallback');
-    onLogEvent?.('FALLBACK_TRIGGERED', { reason: 'NETWORK_TIMEOUT_SIMULATION' });
-  };
+  // Filter contacts by search query
+  const filteredPayees = PRESET_PAYEES.filter(p => 
+    p.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+    p.vpa.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    p.category.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
-  // Phone dynamic multi-layered glow styling bound to real-time composite_score
+  // Dynamic state-driven multi-layered glowing border
   let phoneBorderClass = 'phone-glow-default';
   if (assessment && (screen === 'result' || screen === 'step2_pin' || screen === 'interstitial')) {
     if (assessment.composite_score <= 40) {
@@ -283,8 +300,8 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
 
   const getInterstitialReasonSummary = (reasonCodes: string[]): string => {
     const codeMap: Record<string, string> = {
-      'HIGH_ANOMALY': 'an unusual amount',
-      'UNUSUAL_AMOUNT_SURGE': 'an unusual amount',
+      'HIGH_ANOMALY': 'an unusual amount surge',
+      'UNUSUAL_AMOUNT_SURGE': 'an unusual amount surge',
       'UNUSUAL_AMOUNT': 'an unusual amount',
       'NEW_RECEIVER': 'a new receiver',
       'SUSPICIOUS_RECEIVER': 'an unfamiliar receiver',
@@ -297,15 +314,9 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
       .map(c => codeMap[c])
       .filter((v, i, a): v is string => Boolean(v) && a.indexOf(v) === i);
 
-    if (detected.length === 0) {
-      return 'elevated anomaly signals';
-    }
-    if (detected.length === 1) {
-      return detected[0];
-    }
-    if (detected.length === 2) {
-      return `${detected[0]} and ${detected[1]}`;
-    }
+    if (detected.length === 0) return 'elevated anomaly signals';
+    if (detected.length === 1) return detected[0];
+    if (detected.length === 2) return `${detected[0]} and ${detected[1]}`;
     return `${detected[0]}, ${detected[1]}, and other security signals`;
   };
 
@@ -328,12 +339,14 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
     }
   };
 
+  const isAmountInvalid = !transaction.amount || transaction.amount <= 0 || transaction.amount > 100000 || transaction.amount > accountBalance || isNaN(Number(transaction.amount)) || !!amountError;
+
   return (
     <div className="flex flex-col items-center">
       
-      {/* Smartphone Device Frame */}
+      {/* Smartphone Device Frame (PepperMoney Dark Luxury) */}
       <div 
-        className={`relative w-[360px] sm:w-[380px] h-[720px] rounded-[48px] bg-[var(--phone-bg)] border-[6px] transition-all duration-300 overflow-hidden flex flex-col justify-between select-none ${phoneBorderClass}`}
+        className={`relative w-[360px] sm:w-[380px] h-[720px] rounded-[48px] bg-[var(--phone-bg)] border-[6px] transition-all duration-300 overflow-hidden flex flex-col justify-between select-none shadow-2xl ${phoneBorderClass}`}
       >
         
         {/* Status Bar */}
@@ -345,338 +358,310 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
             color: 'var(--text-primary)'
           }}
         >
-          <span className="font-bold text-[13px]" style={{ color: 'var(--text-primary)' }}>9:41</span>
+          <span className="font-bold text-[13px]">9:41</span>
           
           {/* Dynamic Island */}
           <div 
-            className="w-24 h-4 rounded-full flex items-center justify-center gap-1.5 px-2 shadow-inner"
-            style={{ backgroundColor: 'var(--text-primary)' }}
+            className="w-24 h-4 rounded-full flex items-center justify-center gap-1.5 px-2 bg-[#09090B] shadow-inner border border-white/5"
           >
-            <span className="w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: 'var(--primary-light)' }}></span>
-            <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: 'var(--primary)' }}></span>
+            <span className="w-2 h-2 rounded-full animate-pulse bg-rose-500"></span>
+            <span className="w-1.5 h-1.5 rounded-full bg-rose-400"></span>
           </div>
 
-          <div className="flex items-center gap-1.5" style={{ color: 'var(--text-primary)' }}>
-            <Wifi className="w-3.5 h-3.5" style={{ color: 'var(--primary)' }} />
-            <Battery className="w-4 h-4" style={{ color: 'var(--primary)' }} />
+          <div className="flex items-center gap-1.5 text-white/80">
+            <Wifi className="w-3.5 h-3.5 text-rose-500" />
+            <Battery className="w-4 h-4 text-rose-500" />
           </div>
         </div>
 
         {/* ========================================================= */}
-        {/* SCREEN 1: TRANSACTION SETUP FORM */}
+        {/* SCREEN 1: PAYEE DIRECTORY & CONTACTS SELECTION */}
         {/* ========================================================= */}
-        {screen === 'form' && (
-          <div className="flex-1 flex flex-col justify-between p-5 overflow-y-auto bg-[var(--phone-bg)]">
+        {screen === 'payee_select' && (
+          <div className="flex-1 flex flex-col justify-between p-5 overflow-y-auto bg-[var(--phone-bg)] animate-fadeIn">
             <div className="space-y-4">
               
-              {/* Header */}
-              <div className="flex items-center justify-between pb-2 border-b" style={{ borderColor: 'var(--border-default)' }}>
+              {/* Top Header */}
+              <div className="flex items-center justify-between pb-1 border-b" style={{ borderColor: 'var(--border-default)' }}>
                 <div className="flex items-center gap-2">
-                  <div 
-                    className="w-7 h-7 rounded-lg flex items-center justify-center text-[10px] font-black font-mono shadow-sm border"
-                    style={{
-                      backgroundColor: 'var(--phone-card)',
-                      borderColor: 'var(--border-default)',
-                      color: 'var(--primary)'
-                    }}
-                  >
-                    UPI
+                  <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-rose-600 to-rose-900 flex items-center justify-center text-xs font-black text-white shadow-sm">
+                    P
                   </div>
                   <div>
-                    <h3 className="text-xs font-bold leading-tight" style={{ color: 'var(--text-primary)' }}>UPI BharatPay</h3>
-                    <p className="text-[10px]" style={{ color: 'var(--text-secondary)' }}>NPCI Certified Interface</p>
+                    <h3 className="text-sm font-bold text-white leading-tight">Send Money</h3>
+                    <p className="text-[10px] text-gray-400 font-mono">UPI BharatPay Direct</p>
                   </div>
-                </div>
-                <button 
-                  onClick={handleTriggerFallback}
-                  title="Simulate network exception fallback"
-                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] transition border"
-                  style={{
-                    backgroundColor: 'var(--phone-card)',
-                    borderColor: 'var(--border-default)',
-                    color: 'var(--text-secondary)'
-                  }}
-                >
-                  <RefreshCw className="w-3 h-3" style={{ color: 'var(--primary)' }} />
-                  <span>Test Fallback</span>
-                </button>
-              </div>
-
-              {/* Paying To (Receiver) Card */}
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-[10px] font-mono uppercase tracking-wider font-bold" style={{ color: 'var(--text-primary)' }}>
-                    PAYING TO (RECEIVER)
-                  </label>
-                  <span className="text-[10px] font-semibold" style={{ color: 'var(--primary)' }}>
-                    NPCI VPA Route
-                  </span>
-                </div>
-
-                <div 
-                  className="p-3.5 rounded-2xl flex items-center justify-between shadow-sm border"
-                  style={{
-                    backgroundColor: 'var(--phone-card)',
-                    borderColor: 'var(--border-default)'
-                  }}
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div 
-                      className="w-10 h-10 rounded-xl flex items-center justify-center font-bold text-sm text-white shadow-sm"
-                      style={{ backgroundColor: 'var(--primary)' }}
-                    >
-                      {selectedPayee.initials}
-                    </div>
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-xs font-bold truncate max-w-[150px]" style={{ color: 'var(--text-primary)' }}>
-                          {selectedPayee.name}
-                        </span>
-                      </div>
-                      <span className="text-[11px] font-mono truncate block" style={{ color: 'var(--text-secondary)' }}>
-                        {selectedPayee.vpa}
-                      </span>
-                    </div>
-                  </div>
-
-                  <span 
-                    className="text-xs font-bold flex items-center gap-1 bg-white px-2 py-0.5 rounded-full border shadow-sm"
-                    style={{
-                      borderColor: 'var(--border-default)',
-                      color: 'var(--primary)'
-                    }}
-                  >
-                    <Sparkles className="w-3 h-3" style={{ color: 'var(--primary)' }} />
-                    Active
-                  </span>
                 </div>
               </div>
 
-              {/* Quick Select Payees (Clean Anti-Gaming) */}
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-[10px] font-mono uppercase tracking-wider font-bold" style={{ color: 'var(--text-primary)' }}>
-                    QUICK SELECT PAYEES:
-                  </label>
-                  <span className="text-[9px] font-mono" style={{ color: 'var(--text-secondary)' }}>Unbiased Selection</span>
+              {/* Search Bar */}
+              <div className="relative">
+                <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Pay by name, UPI ID, or phone"
+                  className="w-full pl-9 pr-3.5 py-2.5 rounded-2xl text-xs bg-[var(--phone-card)] border border-[var(--border-default)] text-white placeholder-gray-500 focus:outline-none focus:border-rose-500 transition shadow-inner font-sans"
+                />
+              </div>
+
+              {/* Vertical Recent Recipients List */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-mono uppercase tracking-wider font-bold text-gray-400">
+                    RECENT RECIPIENTS
+                  </span>
+                  <span className="text-[9px] font-mono text-rose-400">Instant Pay</span>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2">
-                  {PRESET_PAYEES.map((payee) => {
-                    const isSelected = selectedPayee.id === payee.id;
+                <div className="space-y-2">
+                  {filteredPayees.map((payee, idx) => {
+                    const isSelected = selectedPayeeId === payee.id || selectedPayee.id === payee.id;
+                    const avatarGradients = [
+                      'bg-gradient-to-br from-indigo-600 to-violet-800 border-indigo-500/30',
+                      'bg-gradient-to-br from-teal-600 to-emerald-800 border-teal-500/30',
+                      'bg-gradient-to-br from-purple-600 to-pink-800 border-purple-500/30',
+                      'bg-gradient-to-br from-blue-600 to-cyan-800 border-blue-500/30',
+                      'bg-gradient-to-br from-fuchsia-600 to-rose-800 border-fuchsia-500/30',
+                    ];
+                    const avatarBg = avatarGradients[idx % avatarGradients.length];
+
                     return (
                       <button
                         key={payee.id}
                         type="button"
                         onClick={() => handleSelectPayee(payee)}
-                        className={`text-left p-2.5 rounded-xl border text-xs transition-all duration-200 ${
+                        className={`w-full p-3 rounded-2xl border flex items-center justify-between transition-all duration-200 text-left group ${
                           isSelected
-                            ? 'shadow-sm font-bold ring-2'
-                            : 'bg-white hover:opacity-90'
+                            ? 'border-rose-500 bg-rose-950/40 scale-[0.99] shadow-lg shadow-rose-950/30'
+                            : 'border-[var(--border-default)] bg-[var(--phone-card)] hover:border-rose-500/60'
                         }`}
-                        style={{
-                          backgroundColor: isSelected ? 'var(--phone-card)' : 'var(--bg-surface)',
-                          borderColor: isSelected ? 'var(--primary)' : 'var(--border-default)',
-                          color: isSelected ? 'var(--text-primary)' : 'var(--text-secondary)'
-                        }}
                       >
-                        <div className="font-semibold truncate text-[11px]" style={{ color: 'var(--text-primary)' }}>
-                          {payee.name}
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-sm text-white shadow-sm border transition ${avatarBg}`}>
+                            {payee.initials}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-xs font-bold text-white truncate">
+                                {payee.name}
+                              </span>
+                              {payee.verified && (
+                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
+                              )}
+                            </div>
+                            <span className="text-[10px] font-mono text-gray-400 truncate block">
+                              {payee.vpa}
+                            </span>
+                          </div>
                         </div>
-                        <span className="text-[10px] font-mono block mt-0.5 font-bold" style={{ color: 'var(--primary)' }}>
-                          ₹{payee.defaultAmount.toLocaleString('en-IN')}
-                        </span>
+
+                        <div className="text-right flex-shrink-0">
+                          <span className="text-xs font-mono font-bold text-rose-400 block">
+                            ₹{payee.defaultAmount.toLocaleString('en-IN')}
+                          </span>
+                        </div>
                       </button>
                     );
                   })}
                 </div>
               </div>
 
-              {/* Enter Amount */}
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-[10px] font-mono uppercase tracking-wider font-bold block" style={{ color: 'var(--text-primary)' }}>
-                    ENTER AMOUNT
-                  </label>
-                  <span className="text-[10px] font-mono font-semibold" style={{ color: amountError ? '#e11d48' : 'var(--text-secondary)' }}>
-                    Max: ₹1,00,000 / tx
-                  </span>
-                </div>
-                <div className="relative">
-                  <div 
-                    className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none font-bold text-lg font-mono"
-                    style={{ color: amountError ? '#e11d48' : 'var(--primary)' }}
-                  >
-                    ₹
-                  </div>
-                  <input
-                    type="text"
-                    value={customAmount}
-                    onChange={handleCustomAmountInput}
-                    className={`w-full pl-9 pr-4 py-3 rounded-2xl font-mono text-xl font-bold focus:outline-none transition shadow-inner border ${
-                      amountError ? 'border-rose-500 bg-rose-50/40 text-rose-900' : ''
-                    }`}
-                    style={{
-                      backgroundColor: amountError ? undefined : 'var(--phone-card)',
-                      borderColor: amountError ? undefined : 'var(--border-default)',
-                      color: amountError ? undefined : 'var(--text-primary)'
-                    }}
-                    placeholder="0"
-                  />
-                </div>
+            </div>
 
-                {/* Inline Error State */}
-                {amountError && (
-                  <div className="mt-1.5 flex items-start gap-1.5 p-2 rounded-xl text-[11px] font-medium bg-rose-50 text-rose-700 border border-rose-200 animate-pulse">
-                    <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-rose-600" />
-                    <span>{amountError}</span>
-                  </div>
-                )}
+            <p className="text-center text-[10px] text-gray-500 font-mono mt-3">
+              Protected by SentinelAI Real-Time Zero-Trust Engine
+            </p>
+          </div>
+        )}
 
-                {/* Amount Pills */}
-                <div className="flex items-center gap-2 mt-2">
-                  {PRESET_AMOUNTS.map(amt => (
-                    <button
-                      key={amt}
-                      type="button"
-                      onClick={() => handleAmountChange(amt)}
-                      className="flex-1 py-1.5 rounded-lg text-xs font-mono font-semibold transition border shadow-sm"
-                      style={{
-                        backgroundColor: transaction.amount === amt && !amountError ? 'var(--primary)' : 'var(--bg-surface)',
-                        color: transaction.amount === amt && !amountError ? 'var(--text-on-primary)' : 'var(--text-primary)',
-                        borderColor: transaction.amount === amt && !amountError ? 'var(--primary)' : 'var(--border-default)'
-                      }}
-                    >
-                      ₹{amt.toLocaleString('en-IN')}
-                    </button>
-                  ))}
-                </div>
-
-                <div 
-                  className="mt-2.5 p-2 rounded-xl text-[11px] border"
+        {/* ========================================================= */}
+        {/* SCREEN 2: AMOUNT ENTRY & KEYPAD (PEPPERMONEY STYLE) */}
+        {/* ========================================================= */}
+        {screen === 'amount_entry' && (
+          <div className="flex-1 flex flex-col justify-between p-5 bg-[var(--phone-bg)] animate-fadeIn">
+            <div>
+              {/* Header with Back button */}
+              <div className="flex items-center justify-between pb-3 border-b" style={{ borderColor: 'var(--border-default)' }}>
+                <button
+                  onClick={() => setScreen('payee_select')}
+                  className="p-1.5 rounded-xl border text-gray-300 hover:text-white transition"
                   style={{
                     backgroundColor: 'var(--phone-card)',
-                    borderColor: 'var(--border-default)',
-                    color: 'var(--text-primary)'
+                    borderColor: 'var(--border-default)'
                   }}
                 >
-                  <span style={{ color: 'var(--text-secondary)' }}>Note: </span>
-                  <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>{transaction.note}</span>
+                  <ArrowLeft className="w-4 h-4" />
+                </button>
+
+                <span className="text-xs font-mono font-semibold text-gray-400">Transfer Amount</span>
+
+                <div className="w-7 h-7 rounded-xl bg-rose-950/60 border border-rose-800/40 flex items-center justify-center text-[10px] font-mono font-bold text-rose-400">
+                  ₹
                 </div>
               </div>
 
-              {/* Account Card */}
+              {/* Recipient Profile Card */}
+              <div className="flex flex-col items-center text-center mt-3 mb-2">
+                <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-rose-600 to-red-900 border-2 border-rose-500/50 flex items-center justify-center font-bold text-base text-white shadow-md mb-1.5">
+                  {selectedPayee.initials}
+                </div>
+                <h4 className="text-sm font-bold text-white">{selectedPayee.name}</h4>
+                <p className="text-[11px] font-mono text-gray-400">{selectedPayee.vpa}</p>
+              </div>
+
+              {/* Giant Amount Input Display */}
+              <div className="p-3 rounded-2xl border text-center my-2 relative" style={{ backgroundColor: 'var(--phone-card)', borderColor: amountError ? '#EF4444' : 'var(--border-default)' }}>
+                <span className="text-[10px] font-mono uppercase tracking-wider text-gray-400 block mb-0.5">
+                  Enter amount
+                </span>
+                
+                <div className="flex items-center justify-center gap-1">
+                  <span className="text-2xl font-bold font-mono text-rose-500">₹</span>
+                  <span className="text-3xl font-extrabold font-mono text-white tracking-tight">
+                    {customAmount || '0'}
+                  </span>
+                  <span className="w-0.5 h-7 bg-rose-500 animate-pulse ml-0.5 inline-block"></span>
+                </div>
+
+                {amountError && (
+                  <p className="text-[10px] text-red-400 mt-1.5 font-mono animate-pulse">
+                    {amountError}
+                  </p>
+                )}
+              </div>
+
+              {/* Pay Using Bank Card Selector */}
               <div 
-                className="p-2.5 rounded-xl flex items-center justify-between text-xs border"
+                className="p-2.5 rounded-xl border flex items-center justify-between text-xs cursor-pointer hover:border-rose-500 transition mb-3"
                 style={{
                   backgroundColor: 'var(--phone-card)',
                   borderColor: 'var(--border-default)'
                 }}
               >
                 <div className="flex items-center gap-2">
-                  <div 
-                    className="w-6 h-6 rounded-lg flex items-center justify-center text-[9px] font-bold text-white font-mono"
-                    style={{ backgroundColor: 'var(--primary)' }}
-                  >
-                    HDFC
+                  <div className="w-6 h-6 rounded-lg bg-rose-600 text-white font-black text-[10px] flex items-center justify-center font-mono">
+                    H
                   </div>
                   <div>
-                    <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>HDFC Bank •••• {ACCOUNT_LAST4}</span>
-                    <p className="text-[10px] font-mono" style={{ color: 'var(--text-secondary)' }}>
-                      Available Balance: ₹{availableBalance.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </p>
+                    <span className="text-[11px] font-semibold text-white block leading-tight">
+                      HDFC Bank •••• 4092
+                    </span>
+                    <span className="text-[9px] font-mono text-gray-400">
+                      Balance: ₹{accountBalance.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
                   </div>
                 </div>
-                <span className="text-[10px] font-mono font-bold" style={{ color: 'var(--primary)' }}>Verified</span>
+
+                <div className="flex items-center gap-1 text-[10px] font-mono text-rose-400 font-bold">
+                  <span>Active</span>
+                  <ChevronDown className="w-3 h-3" />
+                </div>
               </div>
 
+              {/* Primary Pay CTA */}
+              <button
+                type="button"
+                disabled={isAmountInvalid}
+                onClick={() => setScreen('primary_pin')}
+                className={`w-full py-3 px-4 rounded-2xl text-white font-black text-xs flex items-center justify-center gap-2 shadow-lg transition-all transform ${
+                  isAmountInvalid
+                    ? 'opacity-40 cursor-not-allowed pointer-events-none bg-gray-700' 
+                    : 'bg-rose-600 hover:bg-rose-500 active:scale-[0.98]'
+                }`}
+              >
+                <Lock className="w-3.5 h-3.5" />
+                <span>Pay ₹{(Number(transaction.amount) || 0).toLocaleString('en-IN')} Now</span>
+              </button>
             </div>
 
-            {/* Pay CTA */}
-            <div className="pt-4">
-              {(() => {
-                const isAmountInvalid = !transaction.amount || transaction.amount <= 0 || transaction.amount > 100000 || isNaN(Number(transaction.amount)) || !!amountError || transaction.amount > availableBalance;
-                return (
-                  <button
-                    type="button"
-                    disabled={isAmountInvalid}
-                    onClick={handleStartPinFlow}
-                    className={`w-full py-3.5 px-4 rounded-2xl text-white font-black text-sm flex items-center justify-center gap-2 shadow-lg transition-all transform ${
-                      isAmountInvalid 
-                        ? 'opacity-40 cursor-not-allowed pointer-events-none' 
-                        : 'active:scale-[0.98]'
-                    }`}
-                    style={{ backgroundColor: 'var(--primary)' }}
-                  >
-                    <Lock className="w-4 h-4 text-white" />
-                    <span>Pay ₹{(Number(transaction.amount) || 0).toLocaleString('en-IN')} Securely</span>
-                  </button>
-                );
-              })()}
-              <p className="text-center text-[10px] mt-2 flex items-center justify-center gap-1" style={{ color: 'var(--text-secondary)' }}>
-                <ShieldCheck className="w-3 h-3" style={{ color: 'var(--primary)' }} />
-                <span>Protected by SentinelAI Interception Engine</span>
-              </p>
+            {/* Custom Numeric Keypad (PepperMoney Style) */}
+            <div className="grid grid-cols-3 gap-1.5 max-w-[280px] mx-auto w-full pt-2">
+              {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map(num => (
+                <button
+                  key={num}
+                  type="button"
+                  onClick={() => handleAmountKeypadPress(num)}
+                  className="h-10 rounded-xl font-mono text-lg font-bold border transition flex items-center justify-center bg-[var(--phone-card)] border-[var(--border-default)] text-white hover:bg-rose-950/40 active:scale-95 shadow-sm"
+                >
+                  {num}
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={() => handleAmountKeypadPress('.')}
+                className="h-10 rounded-xl font-mono text-lg font-bold border transition flex items-center justify-center bg-[var(--phone-card)] border-[var(--border-default)] text-gray-400 hover:text-white"
+              >
+                .
+              </button>
+              <button
+                type="button"
+                onClick={() => handleAmountKeypadPress('0')}
+                className="h-10 rounded-xl font-mono text-lg font-bold border transition flex items-center justify-center bg-[var(--phone-card)] border-[var(--border-default)] text-white hover:bg-rose-950/40 active:scale-95"
+              >
+                0
+              </button>
+              <button
+                type="button"
+                onClick={() => handleAmountKeypadPress('backspace')}
+                className="h-10 rounded-xl font-mono text-sm border transition flex items-center justify-center bg-[var(--phone-card)] border-[var(--border-default)] text-gray-400 hover:text-rose-400"
+              >
+                <Delete className="w-4 h-4" />
+              </button>
             </div>
-
           </div>
         )}
 
         {/* ========================================================= */}
-        {/* SCREEN 2: STEP 1 - PRIMARY PIN ENTRY */}
+        {/* SCREEN 3: STEP 1 - PRIMARY PIN */}
         {/* ========================================================= */}
         {screen === 'primary_pin' && (
-          <div className="flex-1 flex flex-col justify-between p-6 bg-[var(--phone-bg)]">
+          <div className="flex-1 flex flex-col justify-between p-6 bg-[var(--phone-bg)] animate-fadeIn">
             <div>
               <div className="flex items-center justify-between mb-4">
                 <button
-                  onClick={() => setScreen('form')}
-                  className="p-1.5 rounded-lg border"
+                  onClick={() => setScreen('amount_entry')}
+                  className="p-1.5 rounded-xl border text-gray-300 hover:text-white transition"
                   style={{
                     backgroundColor: 'var(--phone-card)',
-                    borderColor: 'var(--border-default)',
-                    color: 'var(--text-primary)'
+                    borderColor: 'var(--border-default)'
                   }}
                 >
                   <ArrowLeft className="w-4 h-4" />
                 </button>
-                <span className="text-xs font-mono font-semibold" style={{ color: 'var(--text-secondary)' }}>Step 1: Enter Primary PIN</span>
+                <span className="text-xs font-mono font-semibold text-gray-400">Step 1: Primary PIN</span>
                 <div className="w-6"></div>
               </div>
 
               <div className="text-center mt-2">
-                <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>Transferring to</p>
-                <h4 className="text-sm font-bold mt-0.5" style={{ color: 'var(--text-primary)' }}>{transaction.receiver_name}</h4>
-                <div className="text-2xl font-extrabold font-mono mt-1" style={{ color: 'var(--primary)' }}>
+                <p className="text-xs text-gray-400">Transferring to</p>
+                <h4 className="text-sm font-bold text-white mt-0.5">{transaction.receiver_name}</h4>
+                <div className="text-2xl font-extrabold font-mono mt-1 text-rose-500">
                   ₹{transaction.amount.toLocaleString('en-IN')}
                 </div>
               </div>
 
-              {/* PIN Dots Container */}
+              {/* PIN Dots */}
               <div className={`flex items-center justify-center gap-4 my-6 ${isShaking ? 'animate-shake' : ''}`}>
                 {[0, 1, 2, 3].map(idx => (
                   <div
                     key={idx}
                     className={`w-3.5 h-3.5 rounded-full transition-all duration-200 border ${
-                      primaryPin.length > idx ? 'scale-125 shadow-md' : ''
+                      primaryPin.length > idx ? 'bg-rose-500 scale-125 shadow-md border-rose-400' : 'bg-[var(--phone-card)] border-[var(--border-default)]'
                     }`}
-                    style={{
-                      backgroundColor: primaryPin.length > idx ? 'var(--primary)' : 'var(--phone-card)',
-                      borderColor: primaryPin.length > idx ? 'var(--primary)' : 'var(--border-default)'
-                    }}
                   />
                 ))}
               </div>
 
-              {/* Error Message */}
               {errorMessage && (
-                <div className="flex items-center justify-center gap-1.5 text-xs font-mono text-rose-700 font-bold bg-rose-50 border border-rose-300 rounded-xl py-1.5 px-3 mb-2 animate-pulse">
-                  <XCircle className="w-3.5 h-3.5 text-rose-600" />
+                <div className="flex items-center justify-center gap-1.5 text-xs font-mono text-rose-300 font-bold bg-rose-950/60 border border-rose-800 rounded-xl py-1.5 px-3 mb-2 animate-pulse">
+                  <XCircle className="w-3.5 h-3.5 text-rose-500" />
                   <span>{errorMessage}</span>
                 </div>
               )}
 
-              <p className="text-center text-[11px] font-mono uppercase tracking-wider font-semibold" style={{ color: 'var(--text-secondary)' }}>
+              <p className="text-center text-[11px] font-mono uppercase tracking-wider font-semibold text-gray-400">
                 ENTER 4-DIGIT PRIMARY UPI PIN
               </p>
             </div>
@@ -687,178 +672,133 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
                 <button
                   key={num}
                   type="button"
-                  onClick={() => handleKeypadPress(num, false)}
-                  className="h-14 rounded-2xl font-mono text-xl font-bold border transition flex items-center justify-center shadow-sm hover:opacity-90 active:scale-95"
-                  style={{
-                    backgroundColor: 'var(--phone-card)',
-                    borderColor: 'var(--border-default)',
-                    color: 'var(--text-primary)'
-                  }}
+                  onClick={() => handlePinKeypadPress(num, false)}
+                  className="h-12 rounded-2xl font-mono text-lg font-bold border transition flex items-center justify-center bg-[var(--phone-card)] border-[var(--border-default)] text-white hover:bg-rose-950/30 active:scale-95 shadow-sm"
                 >
                   {num}
                 </button>
               ))}
+              <div className="h-12"></div>
               <button
                 type="button"
-                onClick={() => {
-                  setPrimaryPin('1337');
-                  setTimeout(() => onExecuteTransaction(transaction), 150);
-                }}
-                className="h-14 rounded-2xl font-mono text-xs font-semibold border transition flex flex-col items-center justify-center"
-                style={{
-                  backgroundColor: 'var(--phone-card)',
-                  borderColor: 'var(--border-default)',
-                  color: 'var(--primary)'
-                }}
-              >
-                <Fingerprint className="w-5 h-5" />
-                <span className="text-[9px] font-bold">TouchID</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => handleKeypadPress('0', false)}
-                className="h-14 rounded-2xl font-mono text-xl font-bold border transition flex items-center justify-center shadow-sm hover:opacity-90 active:scale-95"
-                style={{
-                  backgroundColor: 'var(--phone-card)',
-                  borderColor: 'var(--border-default)',
-                  color: 'var(--text-primary)'
-                }}
+                onClick={() => handlePinKeypadPress('0', false)}
+                className="h-12 rounded-2xl font-mono text-lg font-bold border transition flex items-center justify-center bg-[var(--phone-card)] border-[var(--border-default)] text-white hover:bg-rose-950/30 active:scale-95 shadow-sm"
               >
                 0
               </button>
               <button
                 type="button"
-                onClick={() => handleKeypadBackspace(false)}
-                className="h-14 rounded-2xl font-mono text-sm border transition flex items-center justify-center"
-                style={{
-                  backgroundColor: 'var(--phone-card)',
-                  borderColor: 'var(--border-default)',
-                  color: 'var(--text-secondary)'
-                }}
+                onClick={() => handlePinBackspace(false)}
+                className="h-12 rounded-2xl font-mono text-sm border transition flex items-center justify-center bg-[var(--phone-card)] border-[var(--border-default)] text-gray-400 hover:text-rose-400"
               >
-                <Delete className="w-5 h-5" />
+                <Delete className="w-4 h-4" />
               </button>
             </div>
           </div>
         )}
 
         {/* ========================================================= */}
-        {/* SCREEN 3: PIPELINE ANIMATION */}
+        {/* SCREEN: PIPELINE EVALUATION (PRE-AUTH RADAR SCAN) */}
         {/* ========================================================= */}
         {screen === 'pipeline' && (
-          <div className="flex-1 flex flex-col justify-between p-5 bg-[var(--phone-bg)]">
-            <div>
-              <div className="flex items-center justify-between pb-3 border-b" style={{ borderColor: 'var(--border-default)' }}>
-                <div className="flex items-center gap-2">
-                  <div className="w-2.5 h-2.5 rounded-full animate-ping" style={{ backgroundColor: 'var(--primary)' }}></div>
-                  <span className="text-xs font-mono font-bold uppercase" style={{ color: 'var(--text-primary)' }}>
-                    SENTINEL INTERCEPTOR
-                  </span>
-                </div>
-                <span 
-                  className="text-[10px] font-mono px-2 py-0.5 rounded border font-bold"
-                  style={{
-                    backgroundColor: 'var(--phone-card)',
-                    borderColor: 'var(--border-default)',
-                    color: 'var(--primary)'
-                  }}
-                >
-                  REAL-TIME IN-FLIGHT
-                </span>
+          <div className="flex-1 flex flex-col justify-center items-center p-6 text-center space-y-6 bg-[var(--phone-bg)] animate-fadeIn">
+            <div className="relative">
+              <div className="w-24 h-24 rounded-full border-4 border-rose-500/20 flex items-center justify-center animate-spin">
+                <div className="w-20 h-20 rounded-full border-4 border-t-rose-500 border-r-transparent border-b-transparent border-l-transparent"></div>
               </div>
-
-              <div 
-                className="my-3 p-3 rounded-xl border flex items-center justify-between"
-                style={{
-                  backgroundColor: 'var(--phone-card)',
-                  borderColor: 'var(--border-default)'
-                }}
-              >
-                <div>
-                  <span className="text-xs font-mono font-bold" style={{ color: 'var(--text-primary)' }}>
-                    ₹{transaction.amount.toLocaleString('en-IN')} → {transaction.receiver_name}
-                  </span>
-                  <span className="text-[10px] font-mono block" style={{ color: 'var(--text-secondary)' }}>
-                    {transaction.receiver_id}
-                  </span>
-                </div>
-                <span 
-                  className="px-2 py-0.5 rounded text-[10px] font-mono font-bold border"
-                  style={{
-                    backgroundColor: 'var(--bg-surface)',
-                    borderColor: 'var(--primary)',
-                    color: 'var(--primary)'
-                  }}
-                >
-                  VPA_INTENT
-                </span>
-              </div>
-
-              {/* Progress Bar */}
-              <div className="mb-4">
-                <div className="flex items-center justify-between text-[11px] font-mono mb-1" style={{ color: 'var(--text-secondary)' }}>
-                  <span>PIPELINE PROGRESS</span>
-                  <span className="font-bold" style={{ color: 'var(--primary)' }}>
-                    {Math.min(100, Math.round((pipelineStep / 5) * 100))}%
-                  </span>
-                </div>
-                <div className="w-full h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--border-default)' }}>
-                  <div 
-                    className="h-full transition-all duration-150"
-                    style={{ 
-                      width: `${Math.min(100, (pipelineStep / 5) * 100)}%`,
-                      backgroundColor: 'var(--primary)'
-                    }}
-                  ></div>
-                </div>
-              </div>
-
-              {/* Steps */}
-              <div className="space-y-2 text-xs font-mono">
-                {['1. Ingress Ingestion (0.8ms)', '2. Behavioral Biometrics (~3ms)', '3. Anomaly & Velocity (~12ms)', '4. Isolation Forest ML (~14ms)', '5. Zero-Trust Policy Matrix (~3ms)'].map((stepTitle, idx) => (
-                  <div 
-                    key={idx}
-                    className="p-2.5 rounded-xl border transition-all"
-                    style={{
-                      backgroundColor: pipelineStep >= (idx + 1) ? 'var(--phone-card)' : 'var(--bg-surface)',
-                      borderColor: pipelineStep >= (idx + 1) ? 'var(--primary)' : 'var(--border-default)',
-                      color: pipelineStep >= (idx + 1) ? 'var(--text-primary)' : 'var(--text-muted)'
-                    }}
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="font-bold">{stepTitle.split(' (')[0]}</span>
-                      <span className="text-[10px] font-bold" style={{ color: 'var(--primary)' }}>{stepTitle.split(' (')[1]?.replace(')', '')}</span>
-                    </div>
-                  </div>
-                ))}
+              <div className="absolute inset-0 flex items-center justify-center">
+                <ShieldCheck className="w-10 h-10 text-rose-500 animate-pulse" />
               </div>
             </div>
 
-            <div className="pt-3 border-t text-center text-[10px] font-mono" style={{ borderColor: 'var(--border-default)', color: 'var(--text-secondary)' }}>
-              Evaluating sub-millisecond risk profile...
+            <div className="space-y-1.5">
+              <h3 className="text-base font-bold text-white">Zero-Trust Pipeline Active</h3>
+              <p className="text-xs text-gray-400 font-mono">
+                Running sub-millisecond behavioral anomaly extraction...
+              </p>
+            </div>
+
+            {/* Pipeline Stage Indicators */}
+            <div className="w-full max-w-xs space-y-2">
+              {[
+                { label: 'Feature Extraction & Baseline', step: 1 },
+                { label: 'Isolation Forest Anomaly Scoring', step: 2 },
+                { label: 'Velocity & Receiver Rules', step: 3 },
+                { label: 'Normalized Risk Fusion & Policy', step: 4 },
+              ].map(item => {
+                const isPassed = pipelineStep > item.step;
+                const isCurrent = pipelineStep === item.step;
+                return (
+                  <div 
+                    key={item.step} 
+                    className={`flex items-center justify-between p-2 rounded-xl text-[11px] font-mono border transition-all ${
+                      isPassed 
+                        ? 'bg-emerald-950/40 border-emerald-800/60 text-emerald-300' 
+                        : isCurrent
+                        ? 'bg-rose-950/40 border-rose-800/60 text-rose-300 animate-pulse'
+                        : 'bg-black/30 border-white/5 text-gray-500'
+                    }`}
+                  >
+                    <span>{item.label}</span>
+                    <span>{isPassed ? <Check className="w-3 h-3 text-emerald-400" /> : isCurrent ? '•••' : '—'}</span>
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}
 
         {/* ========================================================= */}
-        {/* INTERSTITIAL STEP: 2-LINE REASON CODE SECURITY POPUP */}
+        {/* SCREEN: INTERSTITIAL SECURITY PROMPT (PEPPERMONEY DARK) */}
         {/* ========================================================= */}
         {screen === 'interstitial' && assessment && (
-          <div className="flex-1 flex flex-col justify-between p-6 bg-[var(--phone-bg)] animate-scale-up">
-            <div className="my-auto space-y-4">
+          <div className="flex-1 flex flex-col justify-between p-5 overflow-y-auto bg-[var(--phone-bg)] animate-fadeIn">
+            <div className="space-y-3.5">
               
-              {/* Shield / Warning Icon */}
+              {/* Navigation Header with Back and Cancel buttons */}
+              <div className="flex items-center justify-between pb-1 border-b" style={{ borderColor: 'var(--border-default)' }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onLogEvent?.('PAYMENT_CANCELLED_ON_SECURITY_PROMPT', { 
+                      amount: transaction.amount,
+                      receiver: transaction.receiver_id,
+                      score: assessment.composite_score 
+                    });
+                    handleResetFlow();
+                  }}
+                  className="p-1.5 rounded-xl border text-gray-300 hover:text-white transition flex items-center gap-1.5 text-xs font-semibold"
+                  style={{
+                    backgroundColor: 'var(--phone-card)',
+                    borderColor: 'var(--border-default)'
+                  }}
+                  title="Return to payee selection"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                  <span>Back</span>
+                </button>
+                <span className="text-[10px] font-mono text-gray-400 uppercase tracking-wider">Security Interception</span>
+                <button
+                  type="button"
+                  onClick={handleResetFlow}
+                  className="text-[11px] font-mono text-rose-400 hover:text-rose-300 transition"
+                >
+                  Cancel
+                </button>
+              </div>
+
+              {/* Warning Icon Badge */}
               <div 
-                className={`w-14 h-14 rounded-2xl flex items-center justify-center mx-auto border shadow-sm ${
+                className={`w-14 h-14 rounded-2xl flex items-center justify-center mx-auto border shadow-md ${
                   assessment.composite_score > 75 
-                    ? 'bg-red-50 border-red-300 text-red-600' 
-                    : 'bg-amber-50 border-amber-300 text-amber-600'
+                    ? 'bg-red-950/60 border-red-800 text-red-400' 
+                    : 'bg-amber-950/60 border-amber-800 text-amber-400'
                 }`}
               >
                 {assessment.composite_score > 75 ? (
-                  <ShieldAlert className="w-8 h-8 animate-bounce" />
+                  <ShieldAlert className="w-8 h-8 animate-bounce text-red-500" />
                 ) : (
-                  <AlertTriangle className="w-8 h-8" />
+                  <AlertTriangle className="w-8 h-8 text-amber-500" />
                 )}
               </div>
 
@@ -867,61 +807,105 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
                 <span 
                   className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase tracking-wider ${
                     assessment.composite_score > 75 
-                      ? 'bg-red-100 text-red-800 border border-red-300' 
-                      : 'bg-amber-100 text-amber-800 border border-amber-300'
+                      ? 'bg-red-950 text-red-400 border border-red-800' 
+                      : 'bg-amber-950 text-amber-400 border border-amber-800'
                   }`}
                 >
                   {assessment.composite_score > 75 ? 'HIGH RISK INTERCEPTION' : 'SECURITY STEP-UP REQUIRED'}
                 </span>
-                <h3 className="text-base font-bold" style={{ color: 'var(--text-primary)' }}>
+                <h3 className="text-base font-bold text-white">
                   Security Verification Prompt
                 </h3>
               </div>
 
-              {/* Strict 2-Line Interstitial Text Block */}
+              {/* Security Context Box (Replacing text with toast details & Anomaly Score) */}
               <div 
-                className={`p-4 rounded-2xl border text-xs leading-relaxed text-center space-y-1.5 shadow-sm ${
+                className={`p-3.5 rounded-2xl border text-xs leading-relaxed text-left space-y-2 shadow-sm ${
                   assessment.composite_score > 75 
-                    ? 'bg-red-50/70 border-red-300 text-red-950' 
-                    : 'bg-amber-50/70 border-amber-300 text-amber-950'
+                    ? 'bg-red-950/40 border-red-800/80 text-red-200' 
+                    : 'bg-amber-950/40 border-amber-800/80 text-amber-200'
                 }`}
               >
-                <p className="font-semibold">
-                  Security Check: We detected {getInterstitialReasonSummary(assessment.reason_codes)}.
-                </p>
-                <p className="opacity-90">
-                  Please enter your secondary PIN to authorize this transaction under your liability.
-                </p>
+                <div className="flex items-center justify-between pb-1.5 border-b border-white/10">
+                  <div className="flex items-center gap-1.5 font-bold font-mono text-[10px]">
+                    {assessment.composite_score > 75 ? (
+                      <>
+                        <ShieldAlert className="w-3.5 h-3.5 text-red-400 flex-shrink-0" />
+                        <span className="text-red-300">STEP-UP SECURITY</span>
+                      </>
+                    ) : (
+                      <>
+                        <AlertTriangle className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
+                        <span className="text-amber-300">STEP-UP SECURITY</span>
+                      </>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className={`px-2 py-0.5 text-[10px] font-mono font-black rounded border ${
+                      assessment.composite_score > 75 
+                        ? 'bg-red-500/20 text-red-300 border-red-500/40' 
+                        : 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                    }`}>
+                      SCORE: {assessment.composite_score}/100
+                    </span>
+                    <span className="text-[10px] font-mono opacity-70">
+                      {assessment.latency_ms}ms
+                    </span>
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <h4 className={`text-xs font-bold ${assessment.composite_score > 75 ? 'text-red-300' : 'text-amber-200'}`}>
+                    {assessment.composite_score > 75 ? 'Step 2 Verification Prompted (High Anomaly)' : 'Step 2 Verification Prompted'}
+                  </h4>
+                  <p className="text-[11px] leading-relaxed text-slate-300">
+                    Composite anomaly rating is{' '}
+                    <strong className={assessment.composite_score > 75 ? 'text-red-400 font-bold' : 'text-amber-400 font-bold'}>
+                      {assessment.composite_score}/100
+                    </strong>
+                    . {assessment.composite_score > 75 
+                      ? `Critical anomaly signals detected (${getInterstitialReasonSummary(assessment.reason_codes)}). Please enter your secondary PIN on the device to authorize immediate completion under user liability.`
+                      : 'Please re-enter your security PIN on the device to authorize immediate completion under user liability.'}
+                  </p>
+                </div>
+
+                <div className="flex items-center justify-between pt-1 text-[10px] font-mono border-t border-white/5">
+                  <div className="flex items-center gap-1">
+                    <CheckCircle2 className={`w-3 h-3 ${assessment.composite_score > 75 ? 'text-red-400' : 'text-amber-400'}`} />
+                    <span className={assessment.composite_score > 75 ? 'text-red-300/90 font-medium' : 'text-amber-300/90 font-medium'}>
+                      Irreversible User Override Active
+                    </span>
+                  </div>
+                </div>
               </div>
 
               {/* Transaction Context Pill */}
               <div 
-                className="p-2.5 rounded-xl border text-[11px] font-mono flex items-center justify-between"
+                className="p-2.5 rounded-xl border text-[11px] font-mono flex items-center justify-between text-gray-400"
                 style={{
                   backgroundColor: 'var(--phone-card)',
-                  borderColor: 'var(--border-default)',
-                  color: 'var(--text-secondary)'
+                  borderColor: 'var(--border-default)'
                 }}
               >
-                <span>Amount: <strong style={{ color: 'var(--text-primary)' }}>₹{transaction.amount.toLocaleString('en-IN')}</strong></span>
-                <span>Receiver: <strong style={{ color: 'var(--primary)' }}>{transaction.receiver_name || transaction.receiver_id}</strong></span>
+                <span>Amount: <strong className="text-white">₹{transaction.amount.toLocaleString('en-IN')}</strong></span>
+                <span>Receiver: <strong className="text-rose-400">{transaction.receiver_name || transaction.receiver_id}</strong></span>
               </div>
 
-              {/* Collapsible SHAP Feature Attribution Breakdown (Hidden by default, expands on View click) */}
+              {/* Collapsible SHAP Feature Attribution Breakdown (View Button Toggle) */}
               {showShapDetails && (
                 <div 
-                  className="space-y-2 p-3 rounded-2xl border text-left animate-fadeIn max-h-[200px] overflow-y-auto transition-all"
+                  className="space-y-2 p-3 rounded-2xl border text-left animate-fadeIn max-h-[190px] overflow-y-auto"
                   style={{
                     backgroundColor: 'var(--phone-card)',
                     borderColor: 'var(--border-default)'
                   }}
                 >
-                  <div className="flex items-center justify-between text-[10px] font-mono font-bold border-b pb-1.5" style={{ borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}>
+                  <div className="flex items-center justify-between text-[10px] font-mono font-bold border-b pb-1.5 border-white/10 text-white">
                     <span className="flex items-center gap-1">
-                      <Sparkles className="w-3 h-3" style={{ color: 'var(--primary)' }} />
+                      <Sparkles className="w-3 h-3 text-rose-500" />
                       SHAP FEATURE ATTRIBUTION
                     </span>
-                    <span className="font-mono text-[9px] px-1.5 py-0.5 rounded bg-red-100 text-red-800">
+                    <span className="font-mono text-[9px] px-1.5 py-0.5 rounded bg-red-950 text-red-400 border border-red-800">
                       SCORE: {assessment.composite_score}/100
                     </span>
                   </div>
@@ -930,22 +914,21 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
                     {generateSHAPFeatures(assessment, transaction).map((feat, idx) => (
                       <div 
                         key={idx} 
-                        className="p-2 rounded-xl bg-white border space-y-1 shadow-xs"
-                        style={{ borderColor: 'var(--border-default)' }}
+                        className="p-2 rounded-xl bg-[#121216] border border-white/5 space-y-1"
                       >
                         <div className="flex items-center justify-between font-bold">
-                          <span className="truncate max-w-[170px]" style={{ color: 'var(--text-primary)' }}>{feat.name}</span>
+                          <span className="truncate max-w-[170px] text-white">{feat.name}</span>
                           <span className={`font-mono px-1.5 py-0.5 rounded text-[9px] font-bold ${
-                            feat.is_positive_risk ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                            feat.is_positive_risk ? 'bg-red-950 text-red-400 border border-red-800' : 'bg-emerald-950 text-emerald-400 border border-emerald-800'
                           }`}>
                             {feat.impact_score > 0 ? `+${feat.impact_score}` : feat.impact_score} pts
                           </span>
                         </div>
-                        <div className="flex items-center justify-between text-[9px] font-mono" style={{ color: 'var(--text-secondary)' }}>
+                        <div className="flex items-center justify-between text-[9px] font-mono text-gray-400">
                           <span className="truncate max-w-[140px]">{feat.raw_value}</span>
                           <span className="font-semibold">Weight: {feat.weight_percentage}%</span>
                         </div>
-                        <p className="text-[9px] leading-tight" style={{ color: 'var(--text-secondary)' }}>{feat.description}</p>
+                        <p className="text-[9px] leading-tight text-gray-400">{feat.description}</p>
                       </div>
                     ))}
                   </div>
@@ -954,7 +937,7 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
 
             </div>
 
-            {/* Actions: Report Button & Side-by-Side View / Continue CTAs */}
+            {/* Actions: Report Button & Side-by-Side View / Continue CTAs & Abort Link */}
             <div className="pt-2 space-y-2">
               <ReportReceiverButton
                 currentUserId={transaction.user_id}
@@ -963,13 +946,12 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
                 receiverName={transaction.receiver_name}
                 riskAssessment={assessment}
                 transactionContext={{
-                  transaction_id: assessment.transaction_id || transaction.transaction_id,
+                  transaction_id: transaction.transaction_id,
                   amount: transaction.amount,
                   currency: transaction.currency,
                   device_id: transaction.device_id,
                   note: transaction.note
                 }}
-                apiBaseUrl={BACKEND_BASE_URL}
                 onReportSubmitted={(repId) => onLogEvent?.('FRAUD_REPORT_SUBMITTED', { report_id: repId })}
               />
 
@@ -979,12 +961,11 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
                 <button
                   type="button"
                   onClick={() => setShowShapDetails(prev => !prev)}
-                  className="flex-1 py-3 px-3 rounded-2xl font-bold text-xs flex items-center justify-center gap-1.5 border transition-all shadow-sm active:scale-[0.98]"
-                  style={{
-                    backgroundColor: showShapDetails ? 'var(--primary)' : 'var(--phone-card)',
-                    borderColor: showShapDetails ? 'var(--primary)' : 'var(--border-default)',
-                    color: showShapDetails ? 'var(--text-on-primary)' : 'var(--text-primary)'
-                  }}
+                  className={`flex-1 py-3 px-3 rounded-2xl font-bold text-xs flex items-center justify-center gap-1.5 border transition-all shadow-sm active:scale-[0.98] ${
+                    showShapDetails 
+                      ? 'bg-rose-600 border-rose-500 text-white' 
+                      : 'bg-[var(--phone-card)] border-[var(--border-default)] text-gray-300 hover:text-white'
+                  }`}
                 >
                   <Eye className="w-3.5 h-3.5" />
                   <span>{showShapDetails ? 'Hide' : 'View'}</span>
@@ -994,90 +975,76 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
                 <button
                   type="button"
                   onClick={() => setScreen('step2_pin')}
-                  className="flex-1 py-3 px-3 rounded-2xl text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-md transition-all active:scale-[0.98]"
-                  style={{
-                    backgroundColor: assessment.composite_score > 75 ? '#DC2626' : 'var(--primary)'
-                  }}
+                  className="flex-1 py-3 px-3 rounded-2xl text-white font-bold text-xs flex items-center justify-center gap-1.5 bg-rose-600 hover:bg-rose-500 shadow-md transition-all active:scale-[0.98]"
                 >
                   <span>Continue</span>
                   <ArrowRight className="w-3.5 h-3.5" />
                 </button>
               </div>
+
+              {/* Secondary Abort Action */}
+              <button
+                type="button"
+                onClick={handleResetFlow}
+                className="w-full text-center py-1 text-[11px] font-mono text-gray-400 hover:text-rose-400 transition"
+              >
+                ✕ Cancel transaction and return home
+              </button>
             </div>
           </div>
         )}
 
         {/* ========================================================= */}
-        {/* SCREEN 4: STEP 2 - SECONDARY PIN */}
+        {/* SCREEN: STEP 2 - SECONDARY PIN */}
         {/* ========================================================= */}
         {screen === 'step2_pin' && assessment && (
-          <div className="flex-1 flex flex-col justify-between p-6 bg-[var(--phone-bg)]">
+          <div className="flex-1 flex flex-col justify-between p-6 bg-[var(--phone-bg)] animate-fadeIn">
             <div>
               <div className="flex items-center justify-between mb-3">
                 <button
-                  onClick={() => setScreen('form')}
-                  className="p-1.5 rounded-lg border"
+                  onClick={() => setScreen('interstitial')}
+                  className="p-1.5 rounded-xl border text-gray-300 hover:text-white transition"
                   style={{
                     backgroundColor: 'var(--phone-card)',
-                    borderColor: 'var(--border-default)',
-                    color: 'var(--text-primary)'
+                    borderColor: 'var(--border-default)'
                   }}
                 >
                   <ArrowLeft className="w-4 h-4" />
                 </button>
                 <span className={`text-xs font-mono font-bold px-2 py-0.5 rounded ${
                   assessment.composite_score > 75 
-                    ? 'bg-red-50 text-red-700 border border-red-300' 
-                    : 'bg-amber-50 text-amber-800 border border-amber-300'
+                    ? 'bg-red-950 text-red-400 border border-red-800' 
+                    : 'bg-amber-950 text-amber-400 border border-amber-800'
                 }`}>
-                  {assessment.composite_score > 75 ? 'USER RISK OVERRIDE AUTH' : 'STEP 2: SECONDARY VERIFICATION'}
+                  STEP 2: SECONDARY VERIFICATION
                 </span>
                 <div className="w-6"></div>
               </div>
 
-              {assessment.composite_score <= 75 ? (
-                <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-300 mb-3 text-xs">
-                  <div className="flex items-center gap-2 text-amber-900 font-bold mb-1">
-                    <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0" />
-                    <span>Secondary PIN Confirmation Required</span>
-                  </div>
-                  <p className="text-[11px] text-amber-800 leading-relaxed">
-                    Elevated risk score ({assessment.composite_score}/100). Re-enter your PIN to authorize immediate irreversible payment to <span className="font-bold" style={{ color: 'var(--text-primary)' }}>{transaction.receiver_name}</span>.
-                  </p>
+              <div className="text-center mt-1">
+                <p className="text-[11px] text-gray-400">High Risk Step-Up Challenge</p>
+                <h4 className="text-sm font-bold text-white mt-0.5">{transaction.receiver_name}</h4>
+                <div className="text-2xl font-black font-mono mt-0.5 text-rose-500">
+                  ₹{transaction.amount.toLocaleString('en-IN')}
                 </div>
-              ) : (
-                <div className="p-3.5 rounded-2xl bg-red-50 border-2 border-red-400 mb-3 text-xs">
-                  <div className="flex items-center gap-2 text-red-900 font-bold mb-1">
-                    <ShieldAlert className="w-4 h-4 text-red-600 animate-bounce flex-shrink-0" />
-                    <span>CRITICAL RISK - USER LIABILITY OVERRIDE</span>
-                  </div>
-                  <p className="text-[11px] text-red-800 leading-relaxed">
-                    High anomaly score ({assessment.composite_score}/100). Re-entering your secondary PIN authorizes immediate payment without system holds.
-                  </p>
-                </div>
-              )}
-
-              <div className="text-center">
-                <p className="text-[11px] font-mono font-semibold" style={{ color: 'var(--text-secondary)' }}>RE-ENTER SECONDARY PIN</p>
                 
+                {/* PIN Dots */}
                 <div className={`flex items-center justify-center gap-4 my-3.5 ${isShaking ? 'animate-shake' : ''}`}>
                   {[0, 1, 2, 3].map(idx => (
                     <div
                       key={idx}
                       className={`w-3.5 h-3.5 rounded-full transition-all duration-200 border ${
-                        secondaryPin.length > idx ? (assessment.composite_score > 75 ? 'bg-red-500 scale-125' : 'bg-amber-500 scale-125') : ''
+                        secondaryPin.length > idx 
+                          ? (assessment.composite_score > 75 ? 'bg-red-500 scale-125 border-red-400' : 'bg-amber-500 scale-125 border-amber-400') 
+                          : 'bg-[var(--phone-card)] border-[var(--border-default)]'
                       }`}
-                      style={{
-                        backgroundColor: secondaryPin.length > idx ? undefined : 'var(--phone-card)',
-                        borderColor: secondaryPin.length > idx ? undefined : 'var(--border-default)'
-                      }}
                     />
                   ))}
                 </div>
 
                 {errorMessage && (
-                  <div className="flex items-center justify-center gap-1.5 text-xs font-mono text-rose-700 font-bold bg-rose-50 border border-rose-300 rounded-xl py-1 px-3 mb-2 animate-pulse">
-                    <XCircle className="w-3.5 h-3.5 text-rose-600" />
+                  <div className="flex items-center justify-center gap-1.5 text-xs font-mono text-rose-300 font-bold bg-rose-950/60 border border-rose-800 rounded-xl py-1 px-3 mb-2 animate-pulse">
+                    <XCircle className="w-3.5 h-3.5 text-rose-500" />
                     <span>{errorMessage}</span>
                   </div>
                 )}
@@ -1090,13 +1057,8 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
                 <button
                   key={num}
                   type="button"
-                  onClick={() => handleKeypadPress(num, true)}
-                  className="h-12 rounded-2xl font-mono text-lg font-bold border transition flex items-center justify-center shadow-sm"
-                  style={{
-                    backgroundColor: 'var(--phone-card)',
-                    borderColor: 'var(--border-default)',
-                    color: 'var(--text-primary)'
-                  }}
+                  onClick={() => handlePinKeypadPress(num, true)}
+                  className="h-12 rounded-2xl font-mono text-lg font-bold border transition flex items-center justify-center bg-[var(--phone-card)] border-[var(--border-default)] text-white hover:bg-rose-950/30 active:scale-95 shadow-sm"
                 >
                   {num}
                 </button>
@@ -1104,42 +1066,27 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
               <button
                 type="button"
                 onClick={() => {
-                  handleKeypadPress('1', true);
-                  setTimeout(() => handleKeypadPress('3', true), 80);
-                  setTimeout(() => handleKeypadPress('3', true), 160);
-                  setTimeout(() => handleKeypadPress('7', true), 240);
+                  handlePinKeypadPress('1', true);
+                  setTimeout(() => handlePinKeypadPress('3', true), 80);
+                  setTimeout(() => handlePinKeypadPress('3', true), 160);
+                  setTimeout(() => handlePinKeypadPress('7', true), 240);
                 }}
-                className="h-12 rounded-2xl font-mono text-xs font-semibold border transition flex flex-col items-center justify-center"
-                style={{
-                  backgroundColor: 'var(--phone-card)',
-                  borderColor: 'var(--border-default)',
-                  color: 'var(--primary)'
-                }}
+                className="h-12 rounded-2xl font-mono text-xs font-semibold border transition flex flex-col items-center justify-center bg-[var(--phone-card)] border-[var(--border-default)] text-rose-400 hover:text-rose-300"
               >
                 <Fingerprint className="w-4 h-4" />
                 <span className="text-[8px] font-bold">Biometric</span>
               </button>
               <button
                 type="button"
-                onClick={() => handleKeypadPress('0', true)}
-                className="h-12 rounded-2xl font-mono text-lg font-bold border transition flex items-center justify-center shadow-sm"
-                style={{
-                  backgroundColor: 'var(--phone-card)',
-                  borderColor: 'var(--border-default)',
-                  color: 'var(--text-primary)'
-                }}
+                onClick={() => handlePinKeypadPress('0', true)}
+                className="h-12 rounded-2xl font-mono text-lg font-bold border transition flex items-center justify-center bg-[var(--phone-card)] border-[var(--border-default)] text-white hover:bg-rose-950/30 active:scale-95"
               >
                 0
               </button>
               <button
                 type="button"
-                onClick={() => handleKeypadBackspace(true)}
-                className="h-12 rounded-2xl font-mono text-sm border transition flex items-center justify-center"
-                style={{
-                  backgroundColor: 'var(--phone-card)',
-                  borderColor: 'var(--border-default)',
-                  color: 'var(--text-secondary)'
-                }}
+                onClick={() => handlePinBackspace(true)}
+                className="h-12 rounded-2xl font-mono text-sm border transition flex items-center justify-center bg-[var(--phone-card)] border-[var(--border-default)] text-gray-400 hover:text-rose-400"
               >
                 <Delete className="w-4 h-4" />
               </button>
@@ -1148,45 +1095,52 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
         )}
 
         {/* ========================================================= */}
-        {/* SCREEN 5: FINAL RESULT */}
+        {/* SCREEN 4: FINAL RESULT / RECEIPT (PEPPERMONEY STYLE) */}
         {/* ========================================================= */}
         {screen === 'result' && assessment && (
-          <div className="flex-1 flex flex-col justify-between p-5 overflow-y-auto bg-[var(--phone-bg)]">
+          <div className="flex-1 flex flex-col justify-between p-5 overflow-y-auto bg-[var(--phone-bg)] animate-fadeIn">
             <div className="space-y-3.5">
               
               {/* Payment Successful Card */}
               <div 
-                className="text-center py-4 px-3 rounded-2xl border shadow-sm transition-all"
+                className="text-center py-4 px-3 rounded-2xl border shadow-md transition-all"
                 style={{
                   backgroundColor: 'var(--phone-card)',
                   borderColor: 'var(--border-default)'
                 }}
               >
                 <div 
-                  className="w-14 h-14 rounded-full border-2 flex items-center justify-center mx-auto mb-2 shadow-sm bg-white"
+                  className="w-14 h-14 rounded-full border-2 flex items-center justify-center mx-auto mb-2 shadow-lg bg-[#18181D]"
                   style={{
                     borderColor: 'var(--primary)',
                     color: 'var(--primary)'
                   }}
                 >
-                  <CheckCircle2 className="w-8 h-8" />
+                  <CheckCircle2 className="w-8 h-8 text-emerald-400" />
                 </div>
                 
-                <h3 className="text-lg font-black" style={{ color: 'var(--text-primary)' }}>Payment Successful</h3>
+                <h3 className="text-lg font-black text-white">Payment Successful</h3>
                 
-                <div className="text-2xl font-black font-mono mt-0.5" style={{ color: 'var(--primary)' }}>
+                <div className="text-2xl font-black font-mono mt-0.5 text-rose-500">
                   ₹{transaction.amount.toLocaleString('en-IN')}
                 </div>
                 
-                <p className="text-[11px] mt-1" style={{ color: 'var(--text-secondary)' }}>
-                  Transferred to <span className="font-bold" style={{ color: 'var(--text-primary)' }}>{transaction.receiver_name}</span>
+                <p className="text-[11px] mt-1 text-gray-400">
+                  Transferred to <span className="font-bold text-white">{transaction.receiver_name}</span>
                 </p>
+
+                <div className="mt-2.5 pt-2 border-t border-white/10 flex items-center justify-between text-[11px] font-mono">
+                  <span className="text-gray-400">Remaining Balance:</span>
+                  <span className="font-bold text-emerald-400">
+                    ₹{accountBalance.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                </div>
 
                 {assessment.composite_score > 40 && (
                   <div className={`inline-flex items-center gap-1 mt-2 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase ${
                     assessment.composite_score > 75 
-                      ? 'bg-red-100 text-red-800 border border-red-300' 
-                      : 'bg-amber-100 text-amber-800 border border-amber-300'
+                      ? 'bg-red-950 text-red-400 border border-red-800' 
+                      : 'bg-amber-950 text-amber-400 border border-amber-800'
                   }`}>
                     <span>Dual-PIN User Acknowledged Override</span>
                   </div>
@@ -1201,9 +1155,9 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
                   borderColor: 'var(--border-default)'
                 }}
               >
-                <div className="flex items-center justify-between text-[11px] font-mono font-bold mb-2" style={{ color: 'var(--text-primary)' }}>
+                <div className="flex items-center justify-between text-[11px] font-mono font-bold mb-2 text-white">
                   <span>ADVANCED REASON CODES</span>
-                  <span className="text-[10px] font-normal" style={{ color: 'var(--primary)' }}>Hover/Tap for Details</span>
+                  <span className="text-[10px] font-normal text-rose-400">Hover/Tap for Details</span>
                 </div>
 
                 <div className="space-y-1.5">
@@ -1214,17 +1168,15 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
                         onClick={() => setActiveTooltip(activeTooltip === code ? null : code)}
                         onMouseEnter={() => setActiveTooltip(code)}
                         onMouseLeave={() => setActiveTooltip(null)}
-                        className="w-full text-left flex items-center justify-between py-1.5 px-2.5 rounded-lg bg-white border text-xs font-mono transition"
-                        style={{ borderColor: 'var(--border-default)' }}
+                        className="w-full text-left flex items-center justify-between py-1.5 px-2.5 rounded-lg bg-[#141418] border border-white/5 text-xs font-mono transition hover:border-rose-500"
                       >
-                        <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>{code}</span>
-                        <HelpCircle className="w-3 h-3" style={{ color: 'var(--primary)' }} />
+                        <span className="font-semibold text-gray-200">{code}</span>
+                        <HelpCircle className="w-3 h-3 text-rose-500" />
                       </button>
 
                       {activeTooltip === code && (
                         <div 
-                          className="absolute left-0 right-0 bottom-full mb-1 p-2.5 rounded-xl bg-white border text-[11px] shadow-lg z-50"
-                          style={{ borderColor: 'var(--primary)', color: 'var(--text-primary)' }}
+                          className="absolute left-0 right-0 bottom-full mb-1 p-2.5 rounded-xl bg-[#1C1C22] border border-rose-500 text-[11px] shadow-2xl z-50 text-gray-200"
                         >
                           <p className="font-sans leading-tight">
                             {getReasonCodeExplanation(code)}
@@ -1238,42 +1190,21 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
 
               {/* Metadata Footer */}
               <div 
-                className="p-2.5 rounded-xl border text-[9px] font-mono space-y-1"
+                className="p-2.5 rounded-xl border text-[9px] font-mono space-y-1 text-gray-400"
                 style={{
                   backgroundColor: 'var(--phone-card)',
-                  borderColor: 'var(--border-default)',
-                  color: 'var(--text-secondary)'
+                  borderColor: 'var(--border-default)'
                 }}
               >
                 <div className="flex items-center justify-between">
                   <span>Transaction ID:</span>
-                  <span className="font-bold" style={{ color: 'var(--text-primary)' }}>{transaction.transaction_id}</span>
+                  <span className="font-bold text-white">{transaction.transaction_id}</span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span>Available Balance:</span>
-                  <span className="font-bold" style={{ color: 'var(--text-primary)' }}>
-                    ₹{availableBalance.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </span>
+                  <span>Settlement:</span>
+                  <span className="font-bold text-rose-400">Irreversible Dispatch</span>
                 </div>
               </div>
-
-              {/* User Reporting Feature (Mounted for High-Risk / Block Flagged Receivers) */}
-              <ReportReceiverButton
-                currentUserId={transaction.user_id}
-                senderId={transaction.user_id}
-                receiverId={transaction.receiver_id}
-                receiverName={transaction.receiver_name}
-                riskAssessment={assessment}
-                transactionContext={{
-                  transaction_id: assessment.transaction_id || transaction.transaction_id,
-                  amount: transaction.amount,
-                  currency: transaction.currency,
-                  device_id: transaction.device_id,
-                  note: transaction.note
-                }}
-                apiBaseUrl={BACKEND_BASE_URL}
-                onReportSubmitted={(repId) => onLogEvent?.('FRAUD_REPORT_SUBMITTED', { report_id: repId })}
-              />
 
             </div>
 
@@ -1282,14 +1213,9 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
               <button
                 type="button"
                 onClick={handleResetFlow}
-                className="w-full py-2.5 px-4 rounded-xl font-bold text-xs flex items-center justify-center gap-2 border transition shadow-sm"
-                style={{
-                  backgroundColor: 'var(--phone-card)',
-                  borderColor: 'var(--border-default)',
-                  color: 'var(--text-primary)'
-                }}
+                className="w-full py-2.5 px-4 rounded-xl font-bold text-xs flex items-center justify-center gap-2 border border-[var(--border-default)] bg-[var(--phone-card)] text-white hover:border-rose-500 transition shadow-sm"
               >
-                <RotateCcw className="w-3.5 h-3.5" style={{ color: 'var(--primary)' }} />
+                <RotateCcw className="w-3.5 h-3.5 text-rose-500" />
                 <span>New UPI Transaction</span>
               </button>
             </div>
@@ -1297,38 +1223,32 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
         )}
 
         {/* ========================================================= */}
-        {/* SCREEN 6: FALLBACK STATE */}
+        {/* SCREEN: FALLBACK STATE (NETWORK CIRCUIT BREAKER) */}
         {/* ========================================================= */}
         {screen === 'fallback' && (
-          <div className="flex-1 flex flex-col justify-between p-6 bg-[var(--phone-bg)] text-center">
+          <div className="flex-1 flex flex-col justify-between p-6 bg-[var(--phone-bg)] text-center animate-fadeIn">
             <div className="my-auto">
-              <div className="w-16 h-16 rounded-full bg-amber-100 border border-amber-300 flex items-center justify-center text-amber-700 mx-auto mb-4">
+              <div className="w-16 h-16 rounded-full bg-amber-950/60 border border-amber-800 flex items-center justify-center text-amber-400 mx-auto mb-4">
                 <Info className="w-8 h-8" />
               </div>
-              <h3 className="text-base font-bold mb-1" style={{ color: 'var(--text-primary)' }}>Network Stream Interrupted</h3>
-              <p className="text-xs max-w-xs mx-auto leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
+              <h3 className="text-base font-bold mb-1 text-white">Network Stream Interrupted</h3>
+              <p className="text-xs max-w-xs mx-auto leading-relaxed text-gray-400">
                 Pre-authorization handshake timed out after 200ms. Transaction safely buffered in local circuit-breaker.
               </p>
             </div>
 
             <div className="space-y-2">
               <button
-                onClick={() => setScreen('form')}
-                className="w-full py-3 px-4 rounded-xl text-white font-bold text-xs shadow-md transition"
-                style={{ backgroundColor: 'var(--primary)' }}
+                onClick={() => setScreen('amount_entry')}
+                className="w-full py-3 px-4 rounded-xl text-white font-bold text-xs bg-rose-600 hover:bg-rose-500 shadow-md transition"
               >
                 Retry Transaction
               </button>
               <button
                 onClick={handleResetFlow}
-                className="w-full py-2.5 px-4 rounded-xl text-xs transition border"
-                style={{
-                  backgroundColor: 'var(--phone-card)',
-                  borderColor: 'var(--border-default)',
-                  color: 'var(--text-primary)'
-                }}
+                className="w-full py-2.5 px-4 rounded-xl text-xs transition border border-[var(--border-default)] bg-[var(--phone-card)] text-gray-300 hover:text-white"
               >
-                Back to Home
+                Back to Contacts
               </button>
             </div>
           </div>

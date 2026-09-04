@@ -9,40 +9,40 @@
 /* 1. NORDIC COPPER & WARM SAND (OPTION 4 - ACTIVE DEFAULT) */
 :root,
 [data-theme="warm-copper"] {
-  --bg-app: #FDFBF7;
-  --bg-app-gradient: linear-gradient(135deg, #FDFBF7 0%, #F8F4EC 50%, #F4ECE0 100%);
-  --bg-surface: #FFFFFF;
-  --bg-card: #FFFFFF;
-  --bg-card-subtle: #FBF8F2;
-  --bg-header: rgba(255, 255, 255, 0.94);
+  --bg-app: #0A0A0C;
+  --bg-app-gradient: radial-gradient(circle at 50% 10%, #181418 0%, #0A0A0C 70%);
+  --bg-surface: #141418;
+  --bg-card: #18181D;
+  --bg-card-subtle: #1C1C22;
+  --bg-header: rgba(16, 16, 20, 0.95);
   
-  --border-default: #E7E5E4;
-  --border-subtle: #F0EAE2;
-  --border-focused: #C2410C;
+  --border-default: #26262E;
+  --border-subtle: #1E1E26;
+  --border-focused: #E11D48;
   
-  --primary: #C2410C;
-  --primary-hover: #9A3412;
-  --primary-light: #FB923C;
-  --primary-glow: rgba(194, 65, 12, 0.35);
+  --primary: #E11D48;
+  --primary-hover: #BE123C;
+  --primary-light: #FB7185;
+  --primary-glow: rgba(225, 29, 72, 0.4);
   
-  --accent-cta: #C2410C;
-  --accent-gradient: linear-gradient(135deg, #C2410C 0%, #EA580C 100%);
+  --accent-cta: #E11D48;
+  --accent-gradient: linear-gradient(135deg, #E11D48 0%, #F43F5E 100%);
 
-  --text-primary: #1C1917;
-  --text-secondary: #57534E;
-  --text-muted: #78716C;
+  --text-primary: #F8FAFC;
+  --text-secondary: #94A3B8;
+  --text-muted: #64748B;
   --text-on-primary: #FFFFFF;
   
-  --phone-bg: #FFFFFF;
-  --phone-header: #FBF8F2;
-  --phone-card: #FAF6F0;
-  --phone-border: #C2410C;
+  --phone-bg: #111114;
+  --phone-header: #16161B;
+  --phone-card: #1A1A20;
+  --phone-border: #E11D48;
 
-  --terminal-bg: #1C1917;
-  --terminal-text: #FDE68A;
+  --terminal-bg: #0F0F13;
+  --terminal-text: #FDA4AF;
 
-  --shadow-card: 0 16px 40px -10px rgba(194, 65, 12, 0.12);
-  --shadow-phone: 0 24px 60px -12px rgba(194, 65, 12, 0.22);
+  --shadow-card: 0 16px 40px -10px rgba(0, 0, 0, 0.6);
+  --shadow-phone: 0 24px 60px -12px rgba(225, 29, 72, 0.25);
 }
 
 /* 2. INSTITUTIONAL TEAL & FINANCIAL BLUE-GREEN (OPTION 2) */
