@@ -51,7 +51,7 @@ UNUSUAL = {
     **VERIFY_LIKE,
     "transaction_id": "TXN_READ_HIGH",
     "user_id": "USR_READ_H",
-    "amount": 250000.00,
+    "amount": 100000.00,
     "receiver_id": "REC_999",
     "device_id": "DEV_NEW",
     "device_type": "unknown",

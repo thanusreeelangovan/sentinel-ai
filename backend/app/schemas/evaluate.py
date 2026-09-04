@@ -1,6 +1,6 @@
 from typing import Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 
 
 class RiskBreakdown(BaseModel):
@@ -25,17 +25,6 @@ class EvaluationSignals(BaseModel):
     human_probability: float
 
 
-class ExplanationSignal(BaseModel):
-    """User-facing contributing signal for the smartphone explanation UI."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    name: str
-    severity: Literal["LOW", "MEDIUM", "HIGH"]
-    short_explanation: str
-    detailed_explanation: str
-
-
 class EvaluateResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -53,7 +42,3 @@ class EvaluateResponse(BaseModel):
     signals: EvaluationSignals
     risk_score: Optional[float] = None
     minimal_explanation: Optional[str] = None
-    summary: str
-    detailed_reasoning: str
-    recommended_action: str
-    explanation_signals: list[ExplanationSignal] = Field(default_factory=list)

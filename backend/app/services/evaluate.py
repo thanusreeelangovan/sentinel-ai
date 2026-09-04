@@ -3,7 +3,7 @@ from time import perf_counter
 
 from sqlalchemy.orm import Session
 
-from app.ml.iforest import score_anomaly
+from app.ml.iforest import get_iforest_service, score_anomaly
 from app.risk.decision import decide
 from app.risk.engine import RiskSignals, calculate_risk
 from app.risk.thresholds import APPROVE_MAX_SCORE, VERIFY_MAX_SCORE
@@ -123,12 +123,12 @@ def evaluate_transaction(transaction: Transaction, db: Session) -> EvaluateRespo
         transaction_id=transaction.transaction_id,
     )
     risk_level = _risk_level(risk.composite_score)
-    summary, detailed_reasoning, recommended_action, explanation_signals = (
-        generate_smartphone_explanation(
-            risk_level=risk_level,
-            reason_codes=reason_codes,
-            risk_breakdown=risk.risk_breakdown,
-        )
+    explanation = generate_smartphone_explanation(
+        risk_level=risk_level,
+        reason_codes=reason_codes,
+        risk_breakdown=risk.risk_breakdown,
+        risk_score=risk.composite_score,
+        shap_features=get_iforest_service().feature_contributions(transaction),
     )
     response = EvaluateResponse(
         transaction_id=transaction.transaction_id,
@@ -137,14 +137,7 @@ def evaluate_transaction(transaction: Transaction, db: Session) -> EvaluateRespo
         risk_level=risk_level,
         risk_breakdown=risk.risk_breakdown,
         reason_codes=reason_codes,
-        explanation=_build_explanation(
-            transaction,
-            risk.composite_score,
-            decision,
-            reason_codes,
-            rule_texts,
-            list(rules.reason_codes),
-        ),
+        explanation=explanation,
         policy_applied=POLICY_BY_DECISION[decision],
         model_version=anomaly.model_version,
         evaluated_at=datetime.now(timezone.utc).isoformat(),
@@ -152,10 +145,6 @@ def evaluate_transaction(transaction: Transaction, db: Session) -> EvaluateRespo
         signals=_build_signals(transaction, rules, risk.composite_score),
         risk_score=risk.composite_score,
         minimal_explanation=minimal.explanation,
-        summary=summary,
-        detailed_reasoning=detailed_reasoning,
-        recommended_action=recommended_action,
-        explanation_signals=explanation_signals,
     )
     persist_evaluation(db, transaction, rules, anomaly, response)
     db.commit()
