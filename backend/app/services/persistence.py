@@ -1,6 +1,6 @@
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.ml.schemas import AnomalyResult
@@ -50,22 +50,48 @@ def persist_evaluation(
         latitude = transaction.location.latitude
         longitude = transaction.location.longitude
 
-    db.add(
-        TransactionRecord(
-            transaction_id=transaction.transaction_id,
-            user_id=transaction.user_id,
-            amount=transaction.amount,
-            currency=transaction.currency,
-            receiver_id=transaction.receiver_id,
-            receiver_type=transaction.receiver_type,
-            timestamp=transaction.timestamp,
-            device_id=transaction.device_id,
-            device_type=transaction.device_type,
-            latitude=latitude,
-            longitude=longitude,
-            ip_address=transaction.ip_address,
+    existing = db.scalar(
+        select(TransactionRecord).where(
+            TransactionRecord.transaction_id == transaction.transaction_id
         )
     )
+    if existing is None:
+        db.add(
+            TransactionRecord(
+                transaction_id=transaction.transaction_id,
+                user_id=transaction.user_id,
+                amount=transaction.amount,
+                currency=transaction.currency,
+                receiver_id=transaction.receiver_id,
+                receiver_type=transaction.receiver_type,
+                timestamp=transaction.timestamp,
+                device_id=transaction.device_id,
+                device_type=transaction.device_type,
+                latitude=latitude,
+                longitude=longitude,
+                ip_address=transaction.ip_address,
+            )
+        )
+    else:
+        existing.user_id = transaction.user_id
+        existing.amount = transaction.amount
+        existing.currency = transaction.currency
+        existing.receiver_id = transaction.receiver_id
+        existing.receiver_type = transaction.receiver_type
+        existing.timestamp = transaction.timestamp
+        existing.device_id = transaction.device_id
+        existing.device_type = transaction.device_type
+        existing.latitude = latitude
+        existing.longitude = longitude
+        existing.ip_address = transaction.ip_address
+        db.execute(
+            delete(RuleEvent).where(RuleEvent.transaction_id == transaction.transaction_id)
+        )
+        db.execute(
+            delete(RiskAssessment).where(
+                RiskAssessment.transaction_id == transaction.transaction_id
+            )
+        )
     db.flush()
 
     breakdown = response.risk_breakdown

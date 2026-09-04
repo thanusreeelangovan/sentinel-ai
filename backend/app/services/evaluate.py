@@ -135,6 +135,7 @@ def evaluate_transaction(transaction: Transaction, db: Session) -> EvaluateRespo
         composite_score=risk.composite_score,
         decision=decision,
         risk_level=risk_level,
+        risk_level=_risk_level(risk.composite_score),
         risk_breakdown=risk.risk_breakdown,
         reason_codes=reason_codes,
         explanation=_build_explanation(
@@ -143,6 +144,7 @@ def evaluate_transaction(transaction: Transaction, db: Session) -> EvaluateRespo
             decision,
             reason_codes,
             rule_texts,
+            list(rules.reason_codes),
         ),
         policy_applied=POLICY_BY_DECISION[decision],
         model_version=anomaly.model_version,

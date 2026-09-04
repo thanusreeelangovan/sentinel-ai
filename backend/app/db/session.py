@@ -25,7 +25,15 @@ _SessionLocal: sessionmaker[Session] | None = None
 def get_engine() -> Engine:
     global _engine
     if _engine is None:
-        _engine = create_engine(get_database_url(), pool_pre_ping=True)
+        database_url = get_database_url()
+        connect_args = {}
+        if database_url.startswith("sqlite"):
+            connect_args["check_same_thread"] = False
+        _engine = create_engine(
+            database_url,
+            pool_pre_ping=not database_url.startswith("sqlite"),
+            connect_args=connect_args,
+        )
     return _engine
 
 
