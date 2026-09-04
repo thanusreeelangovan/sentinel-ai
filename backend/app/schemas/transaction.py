@@ -2,7 +2,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class Location(BaseModel):
@@ -34,7 +34,12 @@ class Transaction(BaseModel):
 
     transaction_id: str
     user_id: str
-    amount: Decimal
+    amount: Decimal = Field(
+        ...,
+        gt=0,
+        le=100000,
+        description="Transaction amount in INR, strictly between ₹1.00 and ₹1,00,000.00 (NPCI/RBI limit)",
+    )
     currency: str
     receiver_id: str
     receiver_name: Optional[str] = None

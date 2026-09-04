@@ -47,6 +47,7 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
   const [secondaryPin, setSecondaryPin] = useState<string>('');
   const [selectedPayee, setSelectedPayee] = useState<Payee>(PRESET_PAYEES[0]);
   const [customAmount, setCustomAmount] = useState<string>(transaction.amount.toString());
+  const [amountError, setAmountError] = useState<string | null>(null);
   const [activeTooltip, setActiveTooltip] = useState<string | null>(null);
 
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -70,13 +71,15 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
 
   const handleSelectPayee = (payee: Payee) => {
     setSelectedPayee(payee);
-    setCustomAmount(payee.defaultAmount.toString());
+    const amt = Math.min(payee.defaultAmount, 100000);
+    setCustomAmount(amt.toString());
+    setAmountError(null);
     setTransaction(prev => ({
       ...prev,
       receiver_id: payee.vpa,
       receiver_name: payee.name,
       receiver_type: payee.receiver_type,
-      amount: payee.defaultAmount,
+      amount: amt,
       note: payee.defaultNote,
       device_type: payee.presetRisk === 'high' ? 'android_emulator' : 'primary_ios',
       device_id: payee.presetRisk === 'high' ? 'DEV_ROOTED_EMU_x86' : 'DEV_APPL_IPHONE_15_PRO_ENCLAVE',
@@ -85,19 +88,59 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
   };
 
   const handleAmountChange = (amt: number) => {
-    setCustomAmount(amt.toString());
-    setTransaction(prev => ({ ...prev, amount: amt }));
-    onLogEvent?.('AMOUNT_CHANGED', { amount: amt });
+    const safeAmt = Math.min(amt, 100000);
+    setCustomAmount(safeAmt.toString());
+    setAmountError(null);
+    setTransaction(prev => ({ ...prev, amount: safeAmt }));
+    onLogEvent?.('AMOUNT_CHANGED', { amount: safeAmt });
   };
 
   const handleCustomAmountInput = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = e.target.value.replace(/[^0-9]/g, '');
-    setCustomAmount(val);
-    const num = parseInt(val, 10);
-    if (!isNaN(num)) {
-      setTransaction(prev => ({ ...prev, amount: num }));
-      onLogEvent?.('AMOUNT_CUSTOM_INPUT', { amount: num });
+    let raw = e.target.value;
+
+    // Strictly accept only numeric characters and at most one decimal point
+    raw = raw.replace(/[^0-9.]/g, '');
+    const parts = raw.split('.');
+    if (parts.length > 2) {
+      raw = parts[0] + '.' + parts.slice(1).join('');
     }
+    // Maximum of two decimal places
+    if (parts[1] && parts[1].length > 2) {
+      raw = parts[0] + '.' + parts[1].slice(0, 2);
+    }
+
+    if (raw === '') {
+      setCustomAmount('');
+      setTransaction(prev => ({ ...prev, amount: 0 }));
+      setAmountError(null);
+      return;
+    }
+
+    const num = parseFloat(raw);
+    if (isNaN(num)) {
+      setCustomAmount(raw);
+      setAmountError('Please enter a valid numeric currency amount.');
+      return;
+    }
+
+    if (num > 100000) {
+      setCustomAmount(raw);
+      setTransaction(prev => ({ ...prev, amount: num }));
+      setAmountError('Transaction limit exceeded: Maximum allowed amount per UPI transaction is ₹1,00,000.');
+      return;
+    }
+
+    if (num <= 0) {
+      setCustomAmount(raw);
+      setTransaction(prev => ({ ...prev, amount: num }));
+      setAmountError('Transaction amount must be greater than ₹0.');
+      return;
+    }
+
+    setAmountError(null);
+    setCustomAmount(raw);
+    setTransaction(prev => ({ ...prev, amount: num }));
+    onLogEvent?.('AMOUNT_CUSTOM_INPUT', { amount: num });
   };
 
   const handleKeypadPress = (digit: string, isSecondary: boolean = false) => {
@@ -422,13 +465,18 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
 
               {/* Enter Amount */}
               <div>
-                <label className="text-[10px] font-mono uppercase tracking-wider font-bold block mb-1.5" style={{ color: 'var(--text-primary)' }}>
-                  ENTER AMOUNT
-                </label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-[10px] font-mono uppercase tracking-wider font-bold block" style={{ color: 'var(--text-primary)' }}>
+                    ENTER AMOUNT
+                  </label>
+                  <span className="text-[10px] font-mono font-semibold" style={{ color: amountError ? '#e11d48' : 'var(--text-secondary)' }}>
+                    Max: ₹1,00,000 / tx
+                  </span>
+                </div>
                 <div className="relative">
                   <div 
                     className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none font-bold text-lg font-mono"
-                    style={{ color: 'var(--primary)' }}
+                    style={{ color: amountError ? '#e11d48' : 'var(--primary)' }}
                   >
                     ₹
                   </div>
@@ -436,15 +484,25 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
                     type="text"
                     value={customAmount}
                     onChange={handleCustomAmountInput}
-                    className="w-full pl-9 pr-4 py-3 rounded-2xl font-mono text-xl font-bold focus:outline-none transition shadow-inner border"
+                    className={`w-full pl-9 pr-4 py-3 rounded-2xl font-mono text-xl font-bold focus:outline-none transition shadow-inner border ${
+                      amountError ? 'border-rose-500 bg-rose-50/40 text-rose-900' : ''
+                    }`}
                     style={{
-                      backgroundColor: 'var(--phone-card)',
-                      borderColor: 'var(--border-default)',
-                      color: 'var(--text-primary)'
+                      backgroundColor: amountError ? undefined : 'var(--phone-card)',
+                      borderColor: amountError ? undefined : 'var(--border-default)',
+                      color: amountError ? undefined : 'var(--text-primary)'
                     }}
                     placeholder="0"
                   />
                 </div>
+
+                {/* Inline Error State */}
+                {amountError && (
+                  <div className="mt-1.5 flex items-start gap-1.5 p-2 rounded-xl text-[11px] font-medium bg-rose-50 text-rose-700 border border-rose-200 animate-pulse">
+                    <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-rose-600" />
+                    <span>{amountError}</span>
+                  </div>
+                )}
 
                 {/* Amount Pills */}
                 <div className="flex items-center gap-2 mt-2">
@@ -455,9 +513,9 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
                       onClick={() => handleAmountChange(amt)}
                       className="flex-1 py-1.5 rounded-lg text-xs font-mono font-semibold transition border shadow-sm"
                       style={{
-                        backgroundColor: transaction.amount === amt ? 'var(--primary)' : 'var(--bg-surface)',
-                        color: transaction.amount === amt ? 'var(--text-on-primary)' : 'var(--text-primary)',
-                        borderColor: transaction.amount === amt ? 'var(--primary)' : 'var(--border-default)'
+                        backgroundColor: transaction.amount === amt && !amountError ? 'var(--primary)' : 'var(--bg-surface)',
+                        color: transaction.amount === amt && !amountError ? 'var(--text-on-primary)' : 'var(--text-primary)',
+                        borderColor: transaction.amount === amt && !amountError ? 'var(--primary)' : 'var(--border-default)'
                       }}
                     >
                       ₹{amt.toLocaleString('en-IN')}
@@ -505,15 +563,25 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
 
             {/* Pay CTA */}
             <div className="pt-4">
-              <button
-                type="button"
-                onClick={handleStartPinFlow}
-                className="w-full py-3.5 px-4 rounded-2xl text-white font-black text-sm flex items-center justify-center gap-2 shadow-lg transition-all transform active:scale-[0.98]"
-                style={{ backgroundColor: 'var(--primary)' }}
-              >
-                <Lock className="w-4 h-4 text-white" />
-                <span>Pay ₹{transaction.amount.toLocaleString('en-IN')} Securely</span>
-              </button>
+              {(() => {
+                const isAmountInvalid = !transaction.amount || transaction.amount <= 0 || transaction.amount > 100000 || isNaN(Number(transaction.amount)) || !!amountError;
+                return (
+                  <button
+                    type="button"
+                    disabled={isAmountInvalid}
+                    onClick={handleStartPinFlow}
+                    className={`w-full py-3.5 px-4 rounded-2xl text-white font-black text-sm flex items-center justify-center gap-2 shadow-lg transition-all transform ${
+                      isAmountInvalid 
+                        ? 'opacity-40 cursor-not-allowed pointer-events-none' 
+                        : 'active:scale-[0.98]'
+                    }`}
+                    style={{ backgroundColor: 'var(--primary)' }}
+                  >
+                    <Lock className="w-4 h-4 text-white" />
+                    <span>Pay ₹{(Number(transaction.amount) || 0).toLocaleString('en-IN')} Securely</span>
+                  </button>
+                );
+              })()}
               <p className="text-center text-[10px] mt-2 flex items-center justify-center gap-1" style={{ color: 'var(--text-secondary)' }}>
                 <ShieldCheck className="w-3 h-3" style={{ color: 'var(--primary)' }} />
                 <span>Protected by SentinelAI Interception Engine</span>
