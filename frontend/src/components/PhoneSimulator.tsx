@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   CheckCircle2, 
   ShieldCheck, 
-  ArrowLeft, 
+  ArrowLeft,
+  ArrowRight,
   Lock, 
   Wifi, 
   Battery, 
@@ -41,7 +42,7 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
   pipelineStep,
   onLogEvent,
 }) => {
-  const [screen, setScreen] = useState<'form' | 'primary_pin' | 'pipeline' | 'step2_pin' | 'result' | 'fallback'>('form');
+  const [screen, setScreen] = useState<'form' | 'primary_pin' | 'pipeline' | 'interstitial' | 'step2_pin' | 'result' | 'fallback'>('form');
   const [primaryPin, setPrimaryPin] = useState<string>('');
   const [secondaryPin, setSecondaryPin] = useState<string>('');
   const [selectedPayee, setSelectedPayee] = useState<Payee>(PRESET_PAYEES[0]);
@@ -57,7 +58,8 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
       setScreen('pipeline');
     } else if (assessment) {
       if (assessment.composite_score > 40 && screen === 'pipeline') {
-        setScreen('step2_pin');
+        // Intercept right after primary PIN submission & evaluation, before Step 2 keypad
+        setScreen('interstitial');
         setSecondaryPin('');
         setErrorMessage(null);
       } else if (screen === 'pipeline') {
@@ -197,7 +199,7 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
 
   // Phone dynamic multi-layered glow styling bound to real-time composite_score
   let phoneBorderClass = 'phone-glow-default';
-  if (assessment && (screen === 'result' || screen === 'step2_pin')) {
+  if (assessment && (screen === 'result' || screen === 'step2_pin' || screen === 'interstitial')) {
     if (assessment.composite_score <= 40) {
       phoneBorderClass = 'phone-glow-green';
     } else if (assessment.composite_score <= 75) {
@@ -206,6 +208,34 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
       phoneBorderClass = 'phone-glow-crimson';
     }
   }
+
+  const getInterstitialReasonSummary = (reasonCodes: string[]): string => {
+    const codeMap: Record<string, string> = {
+      'HIGH_ANOMALY': 'an unusual amount',
+      'UNUSUAL_AMOUNT_SURGE': 'an unusual amount',
+      'UNUSUAL_AMOUNT': 'an unusual amount',
+      'NEW_RECEIVER': 'a new receiver',
+      'SUSPICIOUS_RECEIVER': 'an unfamiliar receiver',
+      'BEHAVIORAL_DEVIATION': 'device & behavioral variations',
+      'EMULATOR_DEVICE_DETECTED': 'an unverified device environment',
+      'HIGH_TRANSACTION_VELOCITY': 'high transaction frequency'
+    };
+
+    const detected = reasonCodes
+      .map(c => codeMap[c])
+      .filter((v, i, a): v is string => Boolean(v) && a.indexOf(v) === i);
+
+    if (detected.length === 0) {
+      return 'elevated anomaly signals';
+    }
+    if (detected.length === 1) {
+      return detected[0];
+    }
+    if (detected.length === 2) {
+      return `${detected[0]} and ${detected[1]}`;
+    }
+    return `${detected[0]}, ${detected[1]}, and other security signals`;
+  };
 
   const getReasonCodeExplanation = (code: string) => {
     switch (code) {
@@ -707,6 +737,92 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
 
             <div className="pt-3 border-t text-center text-[10px] font-mono" style={{ borderColor: 'var(--border-default)', color: 'var(--text-secondary)' }}>
               Evaluating sub-millisecond risk profile...
+            </div>
+          </div>
+        )}
+
+        {/* ========================================================= */}
+        {/* INTERSTITIAL STEP: 2-LINE REASON CODE SECURITY POPUP */}
+        {/* ========================================================= */}
+        {screen === 'interstitial' && assessment && (
+          <div className="flex-1 flex flex-col justify-between p-6 bg-[var(--phone-bg)] animate-scale-up">
+            <div className="my-auto space-y-4">
+              
+              {/* Shield / Warning Icon */}
+              <div 
+                className={`w-14 h-14 rounded-2xl flex items-center justify-center mx-auto border shadow-sm ${
+                  assessment.composite_score > 75 
+                    ? 'bg-red-50 border-red-300 text-red-600' 
+                    : 'bg-amber-50 border-amber-300 text-amber-600'
+                }`}
+              >
+                {assessment.composite_score > 75 ? (
+                  <ShieldAlert className="w-8 h-8 animate-bounce" />
+                ) : (
+                  <AlertTriangle className="w-8 h-8" />
+                )}
+              </div>
+
+              {/* Title & Risk Badge */}
+              <div className="text-center space-y-1">
+                <span 
+                  className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase tracking-wider ${
+                    assessment.composite_score > 75 
+                      ? 'bg-red-100 text-red-800 border border-red-300' 
+                      : 'bg-amber-100 text-amber-800 border border-amber-300'
+                  }`}
+                >
+                  {assessment.composite_score > 75 ? 'HIGH RISK INTERCEPTION' : 'SECURITY STEP-UP REQUIRED'}
+                </span>
+                <h3 className="text-base font-bold" style={{ color: 'var(--text-primary)' }}>
+                  Security Verification Prompt
+                </h3>
+              </div>
+
+              {/* Strict 2-Line Interstitial Text Block */}
+              <div 
+                className={`p-4 rounded-2xl border text-xs leading-relaxed text-center space-y-1.5 shadow-sm ${
+                  assessment.composite_score > 75 
+                    ? 'bg-red-50/70 border-red-300 text-red-950' 
+                    : 'bg-amber-50/70 border-amber-300 text-amber-950'
+                }`}
+              >
+                <p className="font-semibold">
+                  Security Check: We detected {getInterstitialReasonSummary(assessment.reason_codes)}.
+                </p>
+                <p className="opacity-90">
+                  Please enter your secondary PIN to authorize this transaction under your liability.
+                </p>
+              </div>
+
+              {/* Transaction Context Pill */}
+              <div 
+                className="p-2.5 rounded-xl border text-[11px] font-mono flex items-center justify-between"
+                style={{
+                  backgroundColor: 'var(--phone-card)',
+                  borderColor: 'var(--border-default)',
+                  color: 'var(--text-secondary)'
+                }}
+              >
+                <span>Amount: <strong style={{ color: 'var(--text-primary)' }}>₹{transaction.amount.toLocaleString('en-IN')}</strong></span>
+                <span>Receiver: <strong style={{ color: 'var(--primary)' }}>{transaction.receiver_name || transaction.receiver_id}</strong></span>
+              </div>
+
+            </div>
+
+            {/* Single Clear CTA Button */}
+            <div className="pt-4">
+              <button
+                type="button"
+                onClick={() => setScreen('step2_pin')}
+                className="w-full py-3.5 px-4 rounded-2xl text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg transition-all active:scale-[0.98]"
+                style={{
+                  backgroundColor: assessment.composite_score > 75 ? '#DC2626' : 'var(--primary)'
+                }}
+              >
+                <span>Acknowledge &amp; Proceed to Step 2</span>
+                <ArrowRight className="w-4 h-4" />
+              </button>
             </div>
           </div>
         )}
