@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { Payee, SharedTransaction, RiskAssessment } from '../types/sentinel';
 import { PRESET_PAYEES, PRESET_AMOUNTS } from '../data/mockData';
+import { ReportReceiverButton } from './ReportReceiverButton';
 
 interface PhoneSimulatorProps {
   transaction: SharedTransaction;
@@ -1142,6 +1143,23 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
                   <span className="font-bold" style={{ color: 'var(--primary)' }}>Irreversible Dispatch</span>
                 </div>
               </div>
+
+              {/* User Reporting Feature (Mounted for High-Risk / Block Flagged Receivers) */}
+              <ReportReceiverButton
+                currentUserId={transaction.user_id}
+                senderId={transaction.user_id}
+                receiverId={transaction.receiver_id}
+                receiverName={transaction.receiver_name}
+                riskAssessment={assessment}
+                transactionContext={{
+                  transaction_id: transaction.transaction_id,
+                  amount: transaction.amount,
+                  currency: transaction.currency,
+                  device_id: transaction.device_id,
+                  note: transaction.note
+                }}
+                onReportSubmitted={(repId) => onLogEvent?.('FRAUD_REPORT_SUBMITTED', { report_id: repId })}
+              />
 
             </div>
 
