@@ -1,6 +1,47 @@
+# Dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.pnpm-debug.log*
+
+# Production Build Artifacts
+dist/
+build/
+*.local
+
+# Environment & Secrets
 .env
-__pycache__/
-*.pyc
-.venv/
-venv/
+.env*.local
+*.pem
+*.key
+
+# Database
 *.db
+*.sqlite3
+
+# Python & ML
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+*.ipynb_checkpoints/
+.pytest_cache/
+
+# IDE & Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Large media files
+*.mp4
+*.zip
+*.tar.gz

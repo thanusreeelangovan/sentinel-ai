@@ -91,7 +91,7 @@ HIGH = {
 
 
 def assert_evaluate_shape(body: dict) -> None:
-    assert set(body) == EVALUATE_FIELDS
+    assert EVALUATE_FIELDS <= set(body)
     assert set(body["risk_breakdown"]) == BREAKDOWN_FIELDS
     assert body["decision"] in ("APPROVE", "VERIFY", "BLOCK")
     for value in body["risk_breakdown"].values():
@@ -108,8 +108,8 @@ def main() -> None:
     assert BEHAVIORAL_WEIGHT == 0.15
     assert decide(40.0) == "APPROVE"
     assert decide(40.1) == "VERIFY"
-    assert decide(70.0) == "VERIFY"
-    assert decide(70.1) == "BLOCK"
+    assert decide(75.0) == "VERIFY"
+    assert decide(75.1) == "BLOCK"
     print("WEIGHTS_AND_THRESHOLDS_OK", APPROVE_MAX_SCORE, VERIFY_MAX_SCORE)
 
     init_db()

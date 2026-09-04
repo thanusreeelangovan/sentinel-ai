@@ -9,6 +9,14 @@ KNOWN_RECEIVER_TYPES = {
     "bank_account",
     "bank account",
 }
+UNUSUAL_RECEIVER_TYPES = {
+    "new_merchant",
+    "unverified_p2p",
+}
+EMULATOR_DEVICE_TYPES = {
+    "android_emulator",
+    "new_device",
+}
 NIGHTTIME_HOURS = range(0, 5)
 LOCATION_SHIFT_DEGREES = 1.0
 
@@ -25,20 +33,33 @@ def _daily_rate(transaction: Transaction) -> float:
 def _velocity(transaction: Transaction) -> tuple[float, list[str], list[str]]:
     rate = _daily_rate(transaction)
     if rate <= 1:
-        return 10.0, [], []
-    if rate <= 5:
-        return 35.0, [], []
-    if rate <= 20:
-        return (
-            75.0,
-            ["HIGH_TRANSACTION_VELOCITY"],
-            ["Multiple transactions detected within a short time window"],
-        )
-    return (
-        95.0,
-        ["HIGH_TRANSACTION_VELOCITY"],
-        ["Multiple transactions detected within a short time window"],
-    )
+        score = 10.0
+        rules: list[str] = []
+        reasons: list[str] = []
+    elif rate <= 5:
+        score = 35.0
+        rules = []
+        reasons = []
+    elif rate <= 20:
+        score = 75.0
+        rules = ["HIGH_TRANSACTION_VELOCITY"]
+        reasons = ["Multiple transactions detected within a short time window"]
+    else:
+        score = 95.0
+        rules = ["HIGH_TRANSACTION_VELOCITY"]
+        reasons = ["Multiple transactions detected within a short time window"]
+
+    usual_max = float(transaction.user_context.usual_transaction_range.max) or 5000.0
+    ratio = float(transaction.amount) / usual_max
+    if ratio > 10:
+        score = max(score, 80.0)
+        if "HIGH_TRANSACTION_VELOCITY" not in rules:
+            rules.append("HIGH_TRANSACTION_VELOCITY")
+            reasons.append("Transaction amount is an extreme surge versus the user's usual maximum")
+    elif ratio > 3:
+        score = max(score, 45.0)
+
+    return _clamp(score), rules, reasons
 
 
 def _receiver(transaction: Transaction, is_new_receiver: bool) -> tuple[float, list[str], list[str]]:
@@ -46,12 +67,22 @@ def _receiver(transaction: Transaction, is_new_receiver: bool) -> tuple[float, l
     rules: list[str] = []
     reasons: list[str] = []
 
-    if is_new_receiver or transaction.user_context.previous_transaction_count == 0:
+    receiver_type = transaction.receiver_type.strip().lower()
+    receiver_id = transaction.receiver_id.lower()
+    unusual_receiver = (
+        is_new_receiver
+        or transaction.user_context.previous_transaction_count == 0
+        or receiver_type in UNUSUAL_RECEIVER_TYPES
+        or "crypto" in receiver_id
+        or "shadow" in receiver_id
+    )
+
+    if unusual_receiver:
         score += 60.0
         rules.append("NEW_RECEIVER")
         reasons.append("Receiver has limited transaction history")
 
-    if transaction.receiver_type.strip().lower() not in KNOWN_RECEIVER_TYPES:
+    if receiver_type not in KNOWN_RECEIVER_TYPES:
         score += 40.0
         rules.append("UNKNOWN_RECEIVER_TYPE")
         reasons.append("Receiver type is not a recognized counterparty category")
@@ -106,7 +137,16 @@ def _behavioral(
         rules.append("UNUSUAL_AMOUNT")
         reasons.append("Amount differs significantly from user's normal behavior")
 
-    if is_new_device:
+    device_type = transaction.device_type.strip().lower()
+    device_id = transaction.device_id.lower()
+    emulator_device = (
+        is_new_device
+        or device_type in EMULATOR_DEVICE_TYPES
+        or "emu" in device_id
+        or "bot" in device_id
+    )
+
+    if emulator_device:
         score += 35.0
         rules.append("NEW_DEVICE")
         reasons.append("Transaction originated from a device not previously seen for this user")

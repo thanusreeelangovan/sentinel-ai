@@ -15,9 +15,8 @@ def get_database_url() -> str:
     host = os.getenv("POSTGRES_HOST")
     port = os.getenv("POSTGRES_PORT")
     name = os.getenv("POSTGRES_DB")
-    if not all([user, password, host, port, name]):
-        raise RuntimeError(
-            "Database configuration is missing. Set DATABASE_URL or "
-            "POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_HOST, POSTGRES_PORT, and POSTGRES_DB."
-        )
-    return f"postgresql+psycopg2://{user}:{password}@{host}:{port}/{name}"
+    if all([user, password, host, port, name]):
+        return f"postgresql+psycopg2://{user}:{password}@{host}:{port}/{name}"
+
+    # Local fallback so the existing app can run without Docker/Postgres.
+    return "sqlite:///./sentinelai.db"

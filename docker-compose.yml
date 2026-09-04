@@ -1,4 +1,22 @@
+version: '3.8'
+
 services:
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql+psycopg2://sentinel:sentinel@postgres:5432/sentinelai
+    depends_on:
+      - postgres
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+
   postgres:
     image: postgres:16
     environment:
@@ -7,8 +25,3 @@ services:
       POSTGRES_PASSWORD: sentinel
     ports:
       - "5432:5432"
-    volumes:
-      - sentinelai_pgdata:/var/lib/postgresql/data
-
-volumes:
-  sentinelai_pgdata:
