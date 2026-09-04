@@ -24,6 +24,10 @@ import { PRESET_PAYEES, PRESET_AMOUNTS } from '../data/mockData';
 import { generateSHAPFeatures } from '../services/riskEngine';
 import { ReportReceiverButton } from './ReportReceiverButton';
 
+const INITIAL_AVAILABLE_BALANCE = 1000000;
+const ACCOUNT_LAST4 = '4092';
+const BACKEND_BASE_URL = 'http://localhost:8000';
+
 interface PhoneSimulatorProps {
   transaction: SharedTransaction;
   setTransaction: React.Dispatch<React.SetStateAction<SharedTransaction>>;
@@ -53,6 +57,8 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
   const [amountError, setAmountError] = useState<string | null>(null);
   const [activeTooltip, setActiveTooltip] = useState<string | null>(null);
   const [showShapDetails, setShowShapDetails] = useState<boolean>(false);
+  const [availableBalance, setAvailableBalance] = useState<number>(INITIAL_AVAILABLE_BALANCE);
+  const lastSettledTxnId = useRef<string | null>(null);
 
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isShaking, setIsShaking] = useState<boolean>(false);
@@ -68,10 +74,19 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
         setSecondaryPin('');
         setErrorMessage(null);
       } else if (screen === 'pipeline') {
-        setScreen('result');
+        settleCompletedPayment();
       }
     }
   }, [isProcessing, assessment]);
+
+  const settleCompletedPayment = () => {
+    const amount = Number(transaction.amount) || 0;
+    if (lastSettledTxnId.current !== transaction.transaction_id) {
+      setAvailableBalance((prev) => Math.max(0, Number((prev - amount).toFixed(2))));
+      lastSettledTxnId.current = transaction.transaction_id;
+    }
+    setScreen('result');
+  };
 
   const handleSelectPayee = (payee: Payee) => {
     setSelectedPayee(payee);
@@ -187,7 +202,7 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
             });
 
             setTimeout(() => {
-              setScreen('result');
+              settleCompletedPayment();
             }, 200);
           } else {
             onLogEvent?.('DUAL_PIN_MATCH_FAILURE', {
@@ -222,9 +237,18 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
   };
 
   const handleStartPinFlow = () => {
+    const amount = Number(transaction.amount) || 0;
+    if (amount > availableBalance) {
+      setAmountError('Insufficient balance for this payment.');
+      return;
+    }
     setPrimaryPin('');
     setSecondaryPin('');
     setErrorMessage(null);
+    setTransaction((prev) => ({
+      ...prev,
+      transaction_id: 'TXN-UPI-' + Math.floor(100000 + Math.random() * 900000) + '-' + Date.now().toString().slice(-4),
+    }));
     setScreen('primary_pin');
     onLogEvent?.('AUTH_FLOW_STARTED', { amount: transaction.amount, receiver: transaction.receiver_id });
   };
@@ -234,6 +258,7 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
     setSecondaryPin('');
     setErrorMessage(null);
     setIsShaking(false);
+    lastSettledTxnId.current = null;
     setScreen('form');
     onReset();
     onLogEvent?.('SIMULATOR_RESET', { status: 'RESET' });
@@ -556,8 +581,10 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
                     HDFC
                   </div>
                   <div>
-                    <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>HDFC Bank •••• 4092</span>
-                    <p className="text-[10px] font-mono" style={{ color: 'var(--text-secondary)' }}>Available Balance: ₹1,42,850.00</p>
+                    <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>HDFC Bank •••• {ACCOUNT_LAST4}</span>
+                    <p className="text-[10px] font-mono" style={{ color: 'var(--text-secondary)' }}>
+                      Available Balance: ₹{availableBalance.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </p>
                   </div>
                 </div>
                 <span className="text-[10px] font-mono font-bold" style={{ color: 'var(--primary)' }}>Verified</span>
@@ -568,7 +595,7 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
             {/* Pay CTA */}
             <div className="pt-4">
               {(() => {
-                const isAmountInvalid = !transaction.amount || transaction.amount <= 0 || transaction.amount > 100000 || isNaN(Number(transaction.amount)) || !!amountError;
+                const isAmountInvalid = !transaction.amount || transaction.amount <= 0 || transaction.amount > 100000 || isNaN(Number(transaction.amount)) || !!amountError || transaction.amount > availableBalance;
                 return (
                   <button
                     type="button"
@@ -936,12 +963,13 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
                 receiverName={transaction.receiver_name}
                 riskAssessment={assessment}
                 transactionContext={{
-                  transaction_id: transaction.transaction_id,
+                  transaction_id: assessment.transaction_id || transaction.transaction_id,
                   amount: transaction.amount,
                   currency: transaction.currency,
                   device_id: transaction.device_id,
                   note: transaction.note
                 }}
+                apiBaseUrl={BACKEND_BASE_URL}
                 onReportSubmitted={(repId) => onLogEvent?.('FRAUD_REPORT_SUBMITTED', { report_id: repId })}
               />
 
@@ -1222,8 +1250,10 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
                   <span className="font-bold" style={{ color: 'var(--text-primary)' }}>{transaction.transaction_id}</span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span>Settlement:</span>
-                  <span className="font-bold" style={{ color: 'var(--primary)' }}>Irreversible Dispatch</span>
+                  <span>Available Balance:</span>
+                  <span className="font-bold" style={{ color: 'var(--text-primary)' }}>
+                    ₹{availableBalance.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
                 </div>
               </div>
 
@@ -1235,12 +1265,13 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
                 receiverName={transaction.receiver_name}
                 riskAssessment={assessment}
                 transactionContext={{
-                  transaction_id: transaction.transaction_id,
+                  transaction_id: assessment.transaction_id || transaction.transaction_id,
                   amount: transaction.amount,
                   currency: transaction.currency,
                   device_id: transaction.device_id,
                   note: transaction.note
                 }}
+                apiBaseUrl={BACKEND_BASE_URL}
                 onReportSubmitted={(repId) => onLogEvent?.('FRAUD_REPORT_SUBMITTED', { report_id: repId })}
               />
 

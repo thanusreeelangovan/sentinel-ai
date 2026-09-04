@@ -4,9 +4,12 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Set
 
-from fastapi import APIRouter, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
+from sqlalchemy.orm import Session
 
+from app.db.session import get_db
 from app.reports.schemas import CreateReportRequest, ReportResponse
+from app.services.receiver_report import persist_receiver_report, sender_has_reported
 
 router = APIRouter(prefix="/reports", tags=["User Reporting"])
 
@@ -18,7 +21,7 @@ RATE_LIMIT_WINDOW_SECONDS: int = 60
 MAX_REQUESTS_PER_WINDOW: int = 5
 _request_timestamps: Dict[str, List[float]] = defaultdict(list)
 
-# In-memory Duplicate Prevention store: sender_id + receiver_id + transaction_id
+# One fraud report per sender (user), not per transaction.
 _submitted_reports_cache: Set[str] = set()
 
 
@@ -67,8 +70,15 @@ def _get_authenticated_user_id(
     summary="Submit User Report for Extremely High Risk Receiver",
     description="Allows an authenticated sender to submit a fraud report for a receiver evaluated as extremely high risk.",
 )
+@router.post(
+    "/",
+    response_model=ReportResponse,
+    status_code=status.HTTP_201_CREATED,
+    include_in_schema=False,
+)
 def create_report(
     payload: CreateReportRequest,
+    db: Session = Depends(get_db),
     x_authenticated_user_id: Optional[str] = Header(None, alias="X-Authenticated-User-Id"),
     authorization: Optional[str] = Header(None, alias="Authorization"),
 ) -> ReportResponse:
@@ -78,11 +88,8 @@ def create_report(
     # 2. Authentication / Authorization Validation
     auth_user = _get_authenticated_user_id(x_authenticated_user_id, authorization)
     if not auth_user:
-        # If no authentication header provided, reject with 401 Unauthorized
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authentication required: Missing X-Authenticated-User-Id or Authorization header.",
-        )
+        # Phone simulator posts sender_id; accept it when no auth header is present.
+        auth_user = payload.sender_id
 
     if auth_user != payload.sender_id:
         # Sender cannot report on behalf of another user
@@ -101,21 +108,27 @@ def create_report(
             ),
         )
 
-    # 4. Duplicate Attempt Validation
+    # 4. One report per user
     tx_id = str(payload.transaction_context.get("transaction_id", "NO_TX_ID"))
-    dedup_key = f"{payload.sender_id}:{payload.receiver_id}:{tx_id}"
-
-    if dedup_key in _submitted_reports_cache:
+    if payload.sender_id in _submitted_reports_cache or sender_has_reported(db, payload.sender_id):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"Duplicate attempt: A report has already been submitted for receiver '{payload.receiver_id}' under this transaction.",
+            detail="You have already submitted a fraud report. Only one report is allowed per user.",
         )
 
-    # Record into duplicate cache
-    _submitted_reports_cache.add(dedup_key)
+    _submitted_reports_cache.add(payload.sender_id)
 
-    # 5. Success Response (Persistence handled out-of-scope per constraints)
     report_id = f"REP-{uuid.uuid4().hex[:12].upper()}"
+    persist_receiver_report(
+        db,
+        transaction_id=None if tx_id == "NO_TX_ID" else tx_id,
+        sender_id=payload.sender_id,
+        receiver_id=payload.receiver_id,
+        risk_score=payload.risk_score,
+        report_id=report_id,
+        transaction_context=payload.transaction_context,
+    )
+    db.commit()
 
     return ReportResponse(
         report_id=report_id,
