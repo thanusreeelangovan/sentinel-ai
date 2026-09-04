@@ -67,7 +67,7 @@ HIGH = {
     **NORMAL,
     "transaction_id": "TXN_VIEW_HIGH",
     "user_id": "USR_VIEW_H",
-    "amount": 250000.00,
+    "amount": 100000.00,
     "receiver_id": "REC_999",
     "receiver_type": "unknown",
     "timestamp": "2026-09-03T02:15:30+05:30",
@@ -108,7 +108,7 @@ def test_evaluate_minimal_explanation_by_decision() -> None:
             assert item["reason_codes"]
             assert item["minimal_explanation"]
             assert item["minimal_explanation"].startswith(
-                "This transaction was flagged because"
+                "This transaction was flagged due to"
             )
 
         if verify_body["decision"] == "VERIFY":
@@ -157,7 +157,8 @@ def test_view_endpoint_explains_original_evaluation() -> None:
         assert detail["engine_decision"] == body["decision"]
         assert detail["decision"] == DECISION_MAP[body["decision"]]
         assert [factor["feature"] for factor in detail["factors"]] == body["reason_codes"]
-        assert detail["summary"]
+        assert "performed analysis" in detail["summary"].lower()
+        assert f"{body['risk_score']:.2f}" in detail["summary"]
         assert detail["shap_features"] is None
 
         listed = client.get(f"/transactions/{txn_id}")

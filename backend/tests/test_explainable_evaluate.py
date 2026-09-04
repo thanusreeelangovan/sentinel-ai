@@ -63,7 +63,7 @@ HIGH = {
     **LOW,
     "transaction_id": "TXN_UX_HIGH",
     "user_id": "USR_UX_H",
-    "amount": 250000.00,
+    "amount": 100000.00,
     "receiver_id": "REC_999",
     "receiver_type": "unknown",
     "timestamp": "2026-09-03T02:15:30+05:30",
@@ -120,19 +120,18 @@ def _assert_legacy_and_score(body: dict) -> None:
 
 
 def _assert_user_facing(body: dict) -> None:
-    assert isinstance(body["summary"], str) and body["summary"]
-    assert isinstance(body["detailed_reasoning"], str) and body["detailed_reasoning"]
-    assert isinstance(body["recommended_action"], str) and body["recommended_action"]
-    assert isinstance(body["explanation_signals"], list)
+    assert "summary" not in body
+    assert "recommended_action" not in body
+    assert "explanation_signals" not in body
+    assert "detailed_reasoning" not in body
+    assert isinstance(body["explanation"], str) and body["explanation"]
+    assert "sentinelai performed analysis" in body["explanation"].lower()
+    assert f"{body['composite_score']:.2f}" in body["explanation"]
+    assert "risk components" in body["explanation"].lower()
     blob = " ".join(
         [
-            body["summary"],
-            body["detailed_reasoning"],
-            body["recommended_action"],
-            *[
-                f"{item['name']} {item['short_explanation']} {item['detailed_explanation']}"
-                for item in body["explanation_signals"]
-            ],
+            body.get("minimal_explanation") or "",
+            body["explanation"],
         ]
     ).lower()
     for leak in INTERNAL_LEAKS:
@@ -151,32 +150,32 @@ def test_low_medium_high_explanations_preserve_scoring() -> None:
 
         assert low["decision"] == "APPROVE"
         assert low["risk_level"] == "LOW"
-        assert "no significant anomalous" in low["summary"].lower()
-        assert low["explanation_signals"] == []
-        assert "no additional authentication" in low["recommended_action"].lower()
+        assert low["minimal_explanation"] is None
+        assert "no unusual anomalies" in low["explanation"].lower()
 
         assert medium["decision"] == "VERIFY"
         assert medium["risk_level"] == "MEDIUM"
         assert medium["reason_codes"]
-        assert medium["explanation_signals"]
-        assert "additional authentication is required" in medium["recommended_action"].lower()
-        signal_names = {item["name"] for item in medium["explanation_signals"]}
-        if "NEW_RECEIVER" in medium["reason_codes"]:
-            assert "New Beneficiary" in signal_names
-        if "UNUSUAL_AMOUNT" in medium["reason_codes"]:
-            assert "Unusual Amount" in signal_names
-        for item in medium["explanation_signals"]:
-            assert {"name", "severity", "short_explanation", "detailed_explanation"} <= set(item)
-            assert item["severity"] in {"LOW", "MEDIUM", "HIGH"}
-            assert len(item["short_explanation"].split()) <= 16
+        assert medium["minimal_explanation"]
+        assert medium["minimal_explanation"].startswith(
+            "This transaction was flagged due to"
+        )
+        assert medium["minimal_explanation"].count(" and ") <= 1
+        assert "detected factors" in medium["explanation"].lower()
+        assert "feature contributions" in medium["explanation"].lower()
+        assert len(medium["minimal_explanation"]) * 2 < len(medium["explanation"])
 
         assert high["decision"] == "BLOCK"
         assert high["risk_level"] == "HIGH"
         assert high["reason_codes"]
-        assert high["explanation_signals"]
-        assert "high-risk authentication" in high["recommended_action"].lower()
-        assert "high risk" in high["summary"].lower()
-        assert len(high["detailed_reasoning"]) >= len(high["summary"])
+        assert high["minimal_explanation"]
+        assert high["minimal_explanation"].startswith(
+            "This transaction was flagged due to"
+        )
+        assert high["minimal_explanation"].count(" and ") <= 1
+        assert "detected factors" in high["explanation"].lower()
+        assert "feature contributions" in high["explanation"].lower()
+        assert len(high["minimal_explanation"]) * 2 < len(high["explanation"])
 
         db = get_session_factory()()
         try:

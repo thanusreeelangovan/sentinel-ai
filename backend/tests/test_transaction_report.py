@@ -48,7 +48,7 @@ HIGH = {
     **MEDIUM,
     "transaction_id": "TXN_REPORT_HIGH",
     "user_id": "USR_REPORT_H",
-    "amount": 250000.00,
+    "amount": 100000.00,
     "receiver_id": "REC_999",
     "receiver_type": "unknown",
     "device_id": "DEV_NEW",

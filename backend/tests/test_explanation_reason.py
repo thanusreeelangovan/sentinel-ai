@@ -68,7 +68,7 @@ HIGH = {
     **NORMAL,
     "transaction_id": "TXN_EXPLAIN_HIGH",
     "user_id": "USR_EXPLAIN_H",
-    "amount": 250000.00,
+    "amount": 100000.00,
     "receiver_id": "REC_999",
     "receiver_type": "unknown",
     "timestamp": "2026-09-03T02:15:30+05:30",
@@ -128,9 +128,28 @@ def test_minimal_explanation_is_built_from_signals() -> None:
     )
     assert result.decision == "MEDIUM_RISK"
     assert result.explanation == (
-        "This transaction was flagged because the beneficiary is new "
-        "and the transaction amount is unusually high."
+        "This transaction was flagged due to a new beneficiary and an unusual amount."
     )
+
+
+def test_minimal_explanation_uses_at_most_two_reasons() -> None:
+    result = generate_minimal_explanation(
+        decision="BLOCK",
+        reason_codes=[
+            "HIGH_ANOMALY",
+            "HIGH_TRANSACTION_VELOCITY",
+            "UNKNOWN_RECEIVER_TYPE",
+            "UNUSUAL_AMOUNT",
+            "UNUSUAL_HOUR",
+        ],
+        risk_score=89.78,
+        transaction_id="TXN_MANY",
+    )
+    assert result.explanation == (
+        "This transaction was flagged due to an unusual pattern and high payment velocity."
+    )
+    assert "typical hours" not in result.explanation
+    assert "unfamiliar beneficiary" not in result.explanation
 
 
 def test_detailed_explanation_without_inventing_shap() -> None:
@@ -208,15 +227,11 @@ def test_from_evaluate_and_read_models() -> None:
             human_probability=72,
         ),
         risk_score=68.0,
-        summary="This transaction appears unusual because it involves a new beneficiary.",
-        detailed_reasoning="The transaction was classified as medium risk.",
-        recommended_action="Additional authentication is required before completing the payment.",
-        explanation_signals=[],
     )
     minimal = generate_minimal_explanation_from_result(response)
     detailed = generate_detailed_explanation_from_result(response)
     assert minimal.decision == "MEDIUM_RISK"
-    assert "beneficiary is new" in (minimal.explanation or "")
+    assert "new beneficiary" in (minimal.explanation or "")
     assert detailed.transaction_id == "TXN001"
 
     read = TransactionRead(
@@ -256,7 +271,7 @@ def test_live_evaluate_pipeline_explanations() -> None:
     assert high.decision in {"VERIFY", "BLOCK"}
     assert high_min.decision in {"MEDIUM_RISK", "HIGH_RISK"}
     assert high_min.explanation is not None
-    assert high_min.explanation.startswith("This transaction was flagged because")
+    assert high_min.explanation.startswith("This transaction was flagged due to")
     assert high.reason_codes
     assert [factor.feature for factor in high_detail.factors] == high.reason_codes
     assert high_detail.shap_features is None
