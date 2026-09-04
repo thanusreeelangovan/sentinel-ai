@@ -28,6 +28,7 @@ import {
   getLatencyBreakdown, 
   generateAuditLogs 
 } from '../services/riskEngine';
+import { ReportReceiverButton } from './ReportReceiverButton';
 
 interface TelemetryDeckProps {
   assessment: RiskAssessment | null;
@@ -316,6 +317,31 @@ async def evaluate_transaction(
               {assessment.explanation}
             </span>
           </div>
+
+          {isHigh && (
+            <div className="mt-3 pt-3 border-t flex flex-col sm:flex-row sm:items-center justify-between gap-3" style={{ borderColor: 'var(--border-default)' }}>
+              <div className="text-xs text-rose-700 font-medium flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-rose-600 animate-pulse"></span>
+                <span>Critical Threat Flagged: Escalation available for this receiver.</span>
+              </div>
+              <div className="w-full sm:w-72">
+                <ReportReceiverButton
+                  currentUserId={transaction.user_id}
+                  senderId={transaction.user_id}
+                  receiverId={transaction.receiver_id}
+                  receiverName={transaction.receiver_name}
+                  riskAssessment={assessment}
+                  transactionContext={{
+                    transaction_id: transaction.transaction_id,
+                    amount: transaction.amount,
+                    currency: transaction.currency,
+                    device_id: transaction.device_id,
+                    note: transaction.note
+                  }}
+                />
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

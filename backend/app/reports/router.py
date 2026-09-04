@@ -10,8 +10,8 @@ from app.reports.schemas import CreateReportRequest, ReportResponse
 
 router = APIRouter(prefix="/reports", tags=["User Reporting"])
 
-# Statutory / System threshold for "Extremely High Risk"
-EXTREMELY_HIGH_RISK_THRESHOLD: float = 85.0
+# Statutory / System threshold for "Extremely High Risk" (Matching HIGH / BLOCK tier > 75.0)
+EXTREMELY_HIGH_RISK_THRESHOLD: float = 75.0
 
 # In-memory Rate Limiting configuration: Max 5 requests per 60 seconds per sender
 RATE_LIMIT_WINDOW_SECONDS: int = 60

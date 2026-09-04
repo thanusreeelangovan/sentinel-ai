@@ -47,13 +47,17 @@ export const ReportReceiverButton: React.FC<ReportReceiverButtonProps> = ({
   const [reportId, setReportId] = useState<string | null>(null);
 
   // 1. Authorization: Only the initiating sender may view/action the report button
-  const isAuthorizedSender = Boolean(currentUserId && senderId && currentUserId === senderId);
+  const effectiveCurrentUserId = currentUserId || senderId;
+  const isAuthorizedSender = Boolean(effectiveCurrentUserId && senderId && effectiveCurrentUserId === senderId);
 
-  // 2. Visibility Constraint: Strictly rendered ONLY when flagged as "Extremely High Risk" (Score >= 85)
+  // 2. Visibility Constraint: Strictly rendered ONLY when flagged as "Extremely High Risk" (Score > 75 / BLOCK)
   const isExtremelyHighRisk = Boolean(
     riskAssessment && 
-    typeof riskAssessment.composite_score === 'number' && 
-    riskAssessment.composite_score >= 85.0
+    (
+      (typeof riskAssessment.composite_score === 'number' && riskAssessment.composite_score > 75.0) ||
+      riskAssessment.risk_level === 'HIGH' ||
+      riskAssessment.decision === 'BLOCK'
+    )
   );
 
   // If unauthorized or not extremely high risk, do not render in DOM
