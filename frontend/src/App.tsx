@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Header } from './components/Header';
 import { PhoneSimulator } from './components/PhoneSimulator';
-import { TelemetryDeck } from './components/TelemetryDeck';
 import { RiskPopups } from './components/RiskPopups';
 import { FestiveCelebration } from './components/FestiveCelebration';
 import { SharedTransaction, RiskAssessment } from './types/sentinel';
@@ -20,8 +19,6 @@ export const App: React.FC = () => {
 
   // Backend Integration State
   const [backendEndpoint] = useState<string>(DEFAULT_BACKEND_URL);
-  const [isRealBackend, setIsRealBackend] = useState<boolean>(false);
-  const [backendError, setBackendError] = useState<string | undefined>(undefined);
 
   // Popup & Celebration Modal States
   const [showMediumModal, setShowMediumModal] = useState<boolean>(false);
@@ -31,9 +28,7 @@ export const App: React.FC = () => {
 
   // Check Backend Connectivity on Mount
   const handleCheckBackendHealth = useCallback(async () => {
-    const status = await checkBackendHealth(backendEndpoint);
-    setIsRealBackend(status.isConnected);
-    setBackendError(status.error);
+    await checkBackendHealth(backendEndpoint);
   }, [backendEndpoint]);
 
   useEffect(() => {
@@ -65,11 +60,8 @@ export const App: React.FC = () => {
     setTimeout(() => setPipelineStep(5), 500);
 
     // Call Real FastAPI Backend (with automatic fallback to local deterministic ML engine)
-    const { assessment: result, isRealBackend: backendSuccess, error } = 
+    const { assessment: result, isRealBackend: backendSuccess } = 
       await evaluateTransactionWithBackend(txToExecute, backendEndpoint);
-
-    setIsRealBackend(backendSuccess);
-    if (error) setBackendError(error);
 
     setTimeout(() => {
       setAssessment(result);
@@ -112,36 +104,19 @@ export const App: React.FC = () => {
       {/* Top Header Bar */}
       <Header />
 
-      {/* Main Content Area */}
-      <main className="flex-1 w-full max-w-[1780px] mx-auto p-4 lg:p-6">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-          
-          {/* Left Column: Phone Simulator (5 cols) */}
-          <div className="lg:col-span-5 flex justify-center sticky top-20">
-            <PhoneSimulator
-              transaction={transaction}
-              setTransaction={setTransaction}
-              assessment={assessment}
-              onExecuteTransaction={handleExecuteTransaction}
-              onReset={handleReset}
-              isProcessing={isProcessing}
-              pipelineStep={pipelineStep}
-              onLogEvent={handleLogEvent}
-            />
-          </div>
-
-          {/* Right Column: Neural Telemetry Deck (7 cols) */}
-          <div className="lg:col-span-7 flex flex-col h-full min-h-[720px]">
-            <TelemetryDeck
-              assessment={assessment}
-              transaction={transaction}
-              isRealBackend={isRealBackend}
-              backendEndpoint={backendEndpoint}
-              onRefreshBackendCheck={handleCheckBackendHealth}
-              backendError={backendError}
-            />
-          </div>
-
+      {/* Main Content Area: Phone Interface Container */}
+      <main className="flex-1 w-full max-w-4xl mx-auto p-4 lg:p-6 flex items-center justify-center">
+        <div className="flex justify-center w-full">
+          <PhoneSimulator
+            transaction={transaction}
+            setTransaction={setTransaction}
+            assessment={assessment}
+            onExecuteTransaction={handleExecuteTransaction}
+            onReset={handleReset}
+            isProcessing={isProcessing}
+            pipelineStep={pipelineStep}
+            onLogEvent={handleLogEvent}
+          />
         </div>
       </main>
 

@@ -16,10 +16,12 @@ import {
   Info,
   XCircle,
   ShieldAlert,
-  Sparkles
+  Sparkles,
+  Eye
 } from 'lucide-react';
 import { Payee, SharedTransaction, RiskAssessment } from '../types/sentinel';
 import { PRESET_PAYEES, PRESET_AMOUNTS } from '../data/mockData';
+import { generateSHAPFeatures } from '../services/riskEngine';
 import { ReportReceiverButton } from './ReportReceiverButton';
 
 interface PhoneSimulatorProps {
@@ -50,6 +52,7 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
   const [customAmount, setCustomAmount] = useState<string>(transaction.amount.toString());
   const [amountError, setAmountError] = useState<string | null>(null);
   const [activeTooltip, setActiveTooltip] = useState<string | null>(null);
+  const [showShapDetails, setShowShapDetails] = useState<boolean>(false);
 
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isShaking, setIsShaking] = useState<boolean>(false);
@@ -877,21 +880,101 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
                 <span>Receiver: <strong style={{ color: 'var(--primary)' }}>{transaction.receiver_name || transaction.receiver_id}</strong></span>
               </div>
 
+              {/* Collapsible SHAP Feature Attribution Breakdown (Hidden by default, expands on View click) */}
+              {showShapDetails && (
+                <div 
+                  className="space-y-2 p-3 rounded-2xl border text-left animate-fadeIn max-h-[200px] overflow-y-auto transition-all"
+                  style={{
+                    backgroundColor: 'var(--phone-card)',
+                    borderColor: 'var(--border-default)'
+                  }}
+                >
+                  <div className="flex items-center justify-between text-[10px] font-mono font-bold border-b pb-1.5" style={{ borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}>
+                    <span className="flex items-center gap-1">
+                      <Sparkles className="w-3 h-3" style={{ color: 'var(--primary)' }} />
+                      SHAP FEATURE ATTRIBUTION
+                    </span>
+                    <span className="font-mono text-[9px] px-1.5 py-0.5 rounded bg-red-100 text-red-800">
+                      SCORE: {assessment.composite_score}/100
+                    </span>
+                  </div>
+
+                  <div className="space-y-1.5 text-[10px]">
+                    {generateSHAPFeatures(assessment, transaction).map((feat, idx) => (
+                      <div 
+                        key={idx} 
+                        className="p-2 rounded-xl bg-white border space-y-1 shadow-xs"
+                        style={{ borderColor: 'var(--border-default)' }}
+                      >
+                        <div className="flex items-center justify-between font-bold">
+                          <span className="truncate max-w-[170px]" style={{ color: 'var(--text-primary)' }}>{feat.name}</span>
+                          <span className={`font-mono px-1.5 py-0.5 rounded text-[9px] font-bold ${
+                            feat.is_positive_risk ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                          }`}>
+                            {feat.impact_score > 0 ? `+${feat.impact_score}` : feat.impact_score} pts
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between text-[9px] font-mono" style={{ color: 'var(--text-secondary)' }}>
+                          <span className="truncate max-w-[140px]">{feat.raw_value}</span>
+                          <span className="font-semibold">Weight: {feat.weight_percentage}%</span>
+                        </div>
+                        <p className="text-[9px] leading-tight" style={{ color: 'var(--text-secondary)' }}>{feat.description}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
             </div>
 
-            {/* Single Clear CTA Button */}
-            <div className="pt-4">
-              <button
-                type="button"
-                onClick={() => setScreen('step2_pin')}
-                className="w-full py-3.5 px-4 rounded-2xl text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg transition-all active:scale-[0.98]"
-                style={{
-                  backgroundColor: assessment.composite_score > 75 ? '#DC2626' : 'var(--primary)'
+            {/* Actions: Report Button & Side-by-Side View / Continue CTAs */}
+            <div className="pt-2 space-y-2">
+              <ReportReceiverButton
+                currentUserId={transaction.user_id}
+                senderId={transaction.user_id}
+                receiverId={transaction.receiver_id}
+                receiverName={transaction.receiver_name}
+                riskAssessment={assessment}
+                transactionContext={{
+                  transaction_id: transaction.transaction_id,
+                  amount: transaction.amount,
+                  currency: transaction.currency,
+                  device_id: transaction.device_id,
+                  note: transaction.note
                 }}
-              >
-                <span>Acknowledge &amp; Proceed to Step 2</span>
-                <ArrowRight className="w-4 h-4" />
-              </button>
+                onReportSubmitted={(repId) => onLogEvent?.('FRAUD_REPORT_SUBMITTED', { report_id: repId })}
+              />
+
+              {/* Side-by-Side Layout: 50% "View" Button + CSS Gap + 50% "Continue" Button */}
+              <div className="flex items-center gap-2.5 w-full">
+                {/* 1. View Button (50% Width) */}
+                <button
+                  type="button"
+                  onClick={() => setShowShapDetails(prev => !prev)}
+                  className="flex-1 py-3 px-3 rounded-2xl font-bold text-xs flex items-center justify-center gap-1.5 border transition-all shadow-sm active:scale-[0.98]"
+                  style={{
+                    backgroundColor: showShapDetails ? 'var(--primary)' : 'var(--phone-card)',
+                    borderColor: showShapDetails ? 'var(--primary)' : 'var(--border-default)',
+                    color: showShapDetails ? 'var(--text-on-primary)' : 'var(--text-primary)'
+                  }}
+                >
+                  <Eye className="w-3.5 h-3.5" />
+                  <span>{showShapDetails ? 'Hide' : 'View'}</span>
+                </button>
+
+                {/* 2. Continue Button (50% Width) */}
+                <button
+                  type="button"
+                  onClick={() => setScreen('step2_pin')}
+                  className="flex-1 py-3 px-3 rounded-2xl text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-md transition-all active:scale-[0.98]"
+                  style={{
+                    backgroundColor: assessment.composite_score > 75 ? '#DC2626' : 'var(--primary)'
+                  }}
+                >
+                  <span>Continue</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
             </div>
           </div>
         )}
