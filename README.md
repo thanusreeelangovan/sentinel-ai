@@ -37,10 +37,10 @@ docker compose up --build
 Default local services:
 
 ```text
-Frontend: http://localhost:3000
-Backend:  http://localhost:8000
-Swagger:  http://localhost:8000/docs
-Health:   http://localhost:8000/health
+Frontend: https://sentinel-ai-1-5u3s.onrender.com
+Backend:  https://sentinel-ai-wmfu.onrender.com
+Swagger:  https://sentinel-ai-wmfu.onrender.com/docs
+Health:   https://sentinel-ai-wmfu.onrender.com/health
 ```
 
 Docker Compose starts PostgreSQL, waits for database health, starts FastAPI, waits for backend health, and then starts the frontend. PostgreSQL data is stored in the named `postgres_data` volume.
