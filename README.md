@@ -1,21 +1,54 @@
-# SentinelAI - Real-time Pre-Authorization Fraud Detection System
+# SentinelAI
 
-SentinelAI is a sub-millisecond pre-authorization fraud detection engine designed to intercept high-risk financial and UPI payment transactions before fund dispatch.
+SentinelAI is a hackathon prototype for pre-authorization fraud risk evaluation in UPI and digital payment flows. It evaluates transaction and contextual signals before final authorization so suspicious payments can receive step-up verification or be intercepted before normal fund dispatch.
 
-## Core Visual Risk State Thresholds
-- **$\le 40$ (LOW RISK $\rightarrow$ APPROVE)**: Instant frictionless authorization, zero blocking popups, green emerald status.
-- **$41 - 75$ (MEDIUM RISK $\rightarrow$ VERIFY)**: Yellow/Amber/Gold border glow, non-blocking step-up verification toast notification.
-- **$> 75$ (HIGH RISK $\rightarrow$ BLOCK)**: Dark Red / Crimson scheme, prominent urgent critical alert modal, transaction intercepted and blocked.
+## Implemented Risk Flow
+
+| Composite score | Risk level | Backend decision | Prototype action |
+|---:|---|---|---|
+| <= 40 | LOW | `APPROVE` | Proceed normally |
+| > 40 to 75 | MEDIUM | `VERIFY` | Step-up verification |
+| > 75 | HIGH | `BLOCK` | Intercept and show high-risk warning |
+
+The composite risk score uses 40% Isolation Forest anomaly, 25% velocity, 20% receiver and 15% behavioral signals. The explanation layer describes the completed risk result and does not independently score transactions.
 
 ## Tech Stack
-- **Frontend**: React 18, TypeScript, Tailwind CSS, Lucide Icons, Vite
-- **Risk Engine Contract**: 40% Isolation Forest Anomaly + 25% Velocity + 20% Receiver + 15% Behavioral Signals
-- **Performance**: Strict 60fps animations with GPU hardware acceleration and sub-50ms latency profiles.
 
-## Running Locally
+* Frontend: React, TypeScript, Vite, Tailwind CSS
+* Backend: Python, FastAPI, REST APIs, SQLAlchemy
+* Database: PostgreSQL 16
+* Anomaly detection: scikit-learn Isolation Forest
+* Deployment: Docker and Docker Compose, with Nginx serving the production frontend build
+
+## Docker Deployment
+
+Copy the environment example and provide a PostgreSQL password:
+
 ```bash
-cd frontend
-npm install
-npm run dev
+cp .env.example .env
 ```
-Navigate to `http://localhost:3000`.
+
+Then start the complete stack:
+
+```bash
+docker compose up --build
+```
+
+Default local services:
+
+```text
+Frontend: http://localhost:3000
+Backend:  http://localhost:8000
+Swagger:  http://localhost:8000/docs
+Health:   http://localhost:8000/health
+```
+
+Docker Compose starts PostgreSQL, waits for database health, starts FastAPI, waits for backend health, and then starts the frontend. PostgreSQL data is stored in the named `postgres_data` volume.
+
+## Documentation
+
+See `docs/` for the API contract, architecture, database schema, demo scenario, ML contract and risk-engine contract.
+
+## Prototype Scope
+
+SentinelAI demonstrates the architecture and behavior of a pre-authorization fraud prevention layer. It is not a production UPI switch, bank authorization system, or independently validated production fraud model. Performance and accuracy claims should be based only on measured prototype results.
