@@ -24,6 +24,7 @@ import {
 import { Payee, SharedTransaction, RiskAssessment } from '../types/sentinel';
 import { PRESET_PAYEES } from '../data/mockData';
 import { generateSHAPFeatures } from '../services/riskEngine';
+import { DEFAULT_BACKEND_URL } from '../services/apiClient';
 import { ReportReceiverButton } from './ReportReceiverButton';
 
 interface PhoneSimulatorProps {
@@ -59,6 +60,7 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
   const [showShapDetails, setShowShapDetails] = useState<boolean>(false);
   const [activeTooltip, setActiveTooltip] = useState<string | null>(null);
   const [selectedPayeeId, setSelectedPayeeId] = useState<string | null>(null);
+  const reportApiBaseUrl = DEFAULT_BACKEND_URL.replace('/transactions/evaluate', '');
 
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isShaking, setIsShaking] = useState<boolean>(false);
@@ -242,13 +244,13 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
         setErrorMessage(null);
 
         if (nextPin.length === 4) {
-          if (nextPin === '1337' || nextPin === '4092' || nextPin === '9999' || nextPin.length === 4) {
+          if (nextPin === '4092') {
             onLogEvent?.('SECONDARY_PIN_VERIFIED', { success: true, timestamp: new Date().toISOString() });
             deductBalance(transaction.amount);
             setScreen('result');
           } else {
             setIsShaking(true);
-            setErrorMessage('Invalid Secondary Security PIN. Try 1337');
+            setErrorMessage('Invalid demo security PIN. Use 4092.');
             onLogEvent?.('SECONDARY_PIN_FAILED', { error: 'AUTH_FAILED' });
             setTimeout(() => {
               setIsShaking(false);
@@ -666,6 +668,10 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
               </p>
             </div>
 
+            <p className="text-center text-[9px] font-mono text-gray-500 mb-2">
+              Prototype authentication • Demo PIN 4092 • Biometric button simulates successful identity verification
+            </p>
+
             {/* Keypad */}
             <div className="grid grid-cols-3 gap-3 max-w-[280px] mx-auto w-full mb-4">
               {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map(num => (
@@ -903,7 +909,11 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
                   <div className="flex items-center justify-between text-[10px] font-mono font-bold border-b pb-1.5 border-white/10 text-white">
                     <span className="flex items-center gap-1">
                       <Sparkles className="w-3 h-3 text-rose-500" />
-                      SHAP FEATURE ATTRIBUTION
+                      {assessment.model_explanation_method === 'SHAP_TREE_EXPLAINER'
+                        ? 'SHAP MODEL EXPLANATION'
+                        : assessment.model_explanation_method === 'ABLATION_FALLBACK'
+                        ? 'MODEL CONTRIBUTION FALLBACK'
+                        : 'RISK FEATURE EXPLANATION'}
                     </span>
                     <span className="font-mono text-[9px] px-1.5 py-0.5 rounded bg-red-950 text-red-400 border border-red-800">
                       SCORE: {assessment.composite_score}/100
@@ -911,7 +921,18 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
                   </div>
 
                   <div className="space-y-1.5 text-[10px]">
-                    {generateSHAPFeatures(assessment, transaction).map((feat, idx) => (
+                    {(assessment.model_explanation_features?.length
+                      ? assessment.model_explanation_features.map((item) => ({
+                          name: item.feature.replaceAll('_', ' '),
+                          category: 'ANOMALY MODEL',
+                          impact_score: Number(item.contribution.toFixed(3)),
+                          description: 'Contribution to the Isolation Forest model output for this transaction.',
+                          weight_percentage: 0,
+                          raw_value: String(item.value),
+                          is_positive_risk: item.contribution > 0,
+                        }))
+                      : generateSHAPFeatures(assessment, transaction)
+                    ).map((feat, idx) => (
                       <div 
                         key={idx} 
                         className="p-2 rounded-xl bg-[#121216] border border-white/5 space-y-1"
@@ -926,7 +947,9 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
                         </div>
                         <div className="flex items-center justify-between text-[9px] font-mono text-gray-400">
                           <span className="truncate max-w-[140px]">{feat.raw_value}</span>
-                          <span className="font-semibold">Weight: {feat.weight_percentage}%</span>
+                          <span className="font-semibold">
+                            {assessment.model_explanation_features?.length ? 'Model contribution' : `Heuristic weight: ${feat.weight_percentage}%`}
+                          </span>
                         </div>
                         <p className="text-[9px] leading-tight text-gray-400">{feat.description}</p>
                       </div>
@@ -952,6 +975,7 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
                   device_id: transaction.device_id,
                   note: transaction.note
                 }}
+                apiBaseUrl={reportApiBaseUrl}
                 onReportSubmitted={(repId) => onLogEvent?.('FRAUD_REPORT_SUBMITTED', { report_id: repId })}
               />
 
@@ -977,7 +1001,7 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
                   onClick={() => setScreen('step2_pin')}
                   className="flex-1 py-3 px-3 rounded-2xl text-white font-bold text-xs flex items-center justify-center gap-1.5 bg-rose-600 hover:bg-rose-500 shadow-md transition-all active:scale-[0.98]"
                 >
-                  <span>Continue</span>
+                  <span>{assessment.composite_score > 75 ? 'I Recognise This Payment' : 'Verify & Continue'}</span>
                   <ArrowRight className="w-3.5 h-3.5" />
                 </button>
               </div>
@@ -1022,7 +1046,9 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
               </div>
 
               <div className="text-center mt-1">
-                <p className="text-[11px] text-gray-400">High Risk Step-Up Challenge</p>
+                <p className="text-[11px] text-gray-400">
+                  {assessment.composite_score > 75 ? 'High Risk User Override Verification' : 'Step-Up Verification'}
+                </p>
                 <h4 className="text-sm font-bold text-white mt-0.5">{transaction.receiver_name}</h4>
                 <div className="text-2xl font-black font-mono mt-0.5 text-rose-500">
                   ₹{transaction.amount.toLocaleString('en-IN')}
@@ -1066,10 +1092,10 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
               <button
                 type="button"
                 onClick={() => {
-                  handlePinKeypadPress('1', true);
-                  setTimeout(() => handlePinKeypadPress('3', true), 80);
-                  setTimeout(() => handlePinKeypadPress('3', true), 160);
-                  setTimeout(() => handlePinKeypadPress('7', true), 240);
+                  handlePinKeypadPress('4', true);
+                  setTimeout(() => handlePinKeypadPress('0', true), 80);
+                  setTimeout(() => handlePinKeypadPress('9', true), 160);
+                  setTimeout(() => handlePinKeypadPress('2', true), 240);
                 }}
                 className="h-12 rounded-2xl font-mono text-xs font-semibold border transition flex flex-col items-center justify-center bg-[var(--phone-card)] border-[var(--border-default)] text-rose-400 hover:text-rose-300"
               >
@@ -1142,7 +1168,7 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
                       ? 'bg-red-950 text-red-400 border border-red-800' 
                       : 'bg-amber-950 text-amber-400 border border-amber-800'
                   }`}>
-                    <span>Dual-PIN User Acknowledged Override</span>
+                    <span>{assessment.composite_score > 75 ? 'High-Risk Recommendation Overridden by Verified User' : 'Step-Up Verification Completed'}</span>
                   </div>
                 )}
               </div>
@@ -1201,8 +1227,10 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
                   <span className="font-bold text-white">{transaction.transaction_id}</span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span>Settlement:</span>
-                  <span className="font-bold text-rose-400">Irreversible Dispatch</span>
+                  <span>Evaluation:</span>
+                  <span className="font-bold text-rose-400">
+                    {assessment.evaluation_source === 'FASTAPI_BACKEND' ? 'FastAPI Backend' : 'Local Demo Engine'}
+                  </span>
                 </div>
               </div>
 
