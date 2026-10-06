@@ -60,6 +60,9 @@ export interface RiskAssessment {
   model_version: string;
   evaluated_at: string;
   latency_ms: number;
+  evaluation_source: 'FASTAPI BACKEND' | 'LOCAL DEMO ENGINE';
+  model_explanation_method: 'SHAP_TREE_EXPLAINER' | 'ABLATION_FALLBACK' | 'LOCAL_HEURISTIC';
+  model_feature_contributions: ModelFeatureContribution[];
   evaluation_source?: 'FASTAPI_BACKEND' | 'LOCAL_DEMO_ENGINE';
   model_explanation_method?: 'SHAP_TREE_EXPLAINER' | 'ABLATION_FALLBACK' | 'LOCAL_HEURISTIC' | 'UNAVAILABLE';
   model_explanation_features?: ModelExplanationFeature[];
@@ -75,14 +78,20 @@ export interface RiskAssessment {
   };
 }
 
-export interface SHAPFeature {
+export interface ModelFeatureContribution {
+  feature_name: string;
+  feature_value: number;
+  model_contribution: number;
+}
+
+export interface RiskExplanationFeature {
   name: string;
   category: string;
-  impact_score: number; // e.g. -35 (safe) to +45 (risky)
   description: string;
   weight_percentage: number;
   raw_value: string;
-  is_positive_risk: boolean;
+  model_contribution?: number;
+  risk_score?: number;
 }
 
 export interface LatencyStep {
@@ -90,9 +99,9 @@ export interface LatencyStep {
   name: string;
   category: string;
   latency_ms: number;
-  sla_target_ms: number;
+  sla_target_ms?: number;
   description: string;
-  status: 'passed' | 'warning' | 'breached';
+  status: 'measured';
 }
 
 export interface AuditLogEntry {

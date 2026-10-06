@@ -80,7 +80,7 @@ export const CustomSandbox: React.FC<CustomSandboxProps> = ({
               SentinelAI Neural Risk Sandbox &amp; Threshold Calibrator
             </h2>
             <p className="text-xs text-[#374151] mt-1">
-              Directly manipulate the 4 normalized feature signals (0-100) to test real-time threshold transitions and visual boundary states.
+              Adjust the four weighted demo components (0-100) to preview local risk threshold transitions. These overrides do not modify backend rules or model output.
             </p>
           </div>
 

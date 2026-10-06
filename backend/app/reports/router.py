@@ -2,27 +2,25 @@ import time
 import uuid
 from collections import defaultdict
 from datetime import datetime, timezone
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.reports.schemas import CreateReportRequest, ReportResponse
-from app.services.receiver_report import persist_receiver_report, sender_has_reported
+from app.services.receiver_report import get_sender_report, persist_receiver_report
 
 router = APIRouter(prefix="/reports", tags=["User Reporting"])
 
-# Statutory / System threshold for "Extremely High Risk" (Matching HIGH / BLOCK tier > 75.0)
+# Prototype reporting is available only for the HIGH tier (> 75.0).
 EXTREMELY_HIGH_RISK_THRESHOLD: float = 75.0
 
 # In-memory Rate Limiting configuration: Max 5 requests per 60 seconds per sender
 RATE_LIMIT_WINDOW_SECONDS: int = 60
 MAX_REQUESTS_PER_WINDOW: int = 5
 _request_timestamps: Dict[str, List[float]] = defaultdict(list)
-
-# One fraud report per sender (user), not per transaction.
-_submitted_reports_cache: Set[str] = set()
 
 
 def _enforce_rate_limit(sender_id: str) -> None:
@@ -48,8 +46,7 @@ def _get_authenticated_user_id(
     x_authenticated_user_id: Optional[str] = Header(None, alias="X-Authenticated-User-Id"),
     authorization: Optional[str] = Header(None, alias="Authorization"),
 ) -> Optional[str]:
-    """
-    Extracts authenticated user identity from standard request headers.
+    """Read the prototype caller identity; these headers are not verified credentials.
     Supports X-Authenticated-User-Id or Bearer token format.
     """
     if x_authenticated_user_id:
@@ -68,7 +65,7 @@ def _get_authenticated_user_id(
     response_model=ReportResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Submit User Report for Extremely High Risk Receiver",
-    description="Allows an authenticated sender to submit a fraud report for a receiver evaluated as extremely high risk.",
+    description="Accepts a prototype receiver report for a HIGH risk score; caller identity headers are not production authentication.",
 )
 @router.post(
     "/",
@@ -81,47 +78,50 @@ def create_report(
     db: Session = Depends(get_db),
     x_authenticated_user_id: Optional[str] = Header(None, alias="X-Authenticated-User-Id"),
     authorization: Optional[str] = Header(None, alias="Authorization"),
-) -> ReportResponse:
+) -> ReportResponse | JSONResponse:
     # 1. Rate Limiting Check
     _enforce_rate_limit(payload.sender_id)
 
-    # 2. Authentication / Authorization Validation
+    # 2. Check caller-supplied identity consistency; this is not authentication.
     auth_user = _get_authenticated_user_id(x_authenticated_user_id, authorization)
     if not auth_user:
-        # Phone simulator posts sender_id; accept it when no auth header is present.
+        # The phone simulator supplies a demo identity; this is not production authentication.
         auth_user = payload.sender_id
 
     if auth_user != payload.sender_id:
         # Sender cannot report on behalf of another user
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Forbidden: Authenticated user '{auth_user}' does not match sender_id '{payload.sender_id}'.",
+            detail="Forbidden: Caller identity does not match sender_id.",
         )
 
     # 3. Risk Status Validation
-    if payload.risk_score < EXTREMELY_HIGH_RISK_THRESHOLD:
+    if payload.risk_score <= EXTREMELY_HIGH_RISK_THRESHOLD:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=(
                 f"Invalid risk status: Only receivers flagged as 'extremely high risk' "
-                f"(risk_score >= {EXTREMELY_HIGH_RISK_THRESHOLD}) can be reported. Provided score: {payload.risk_score}."
+                f"(risk_score > {EXTREMELY_HIGH_RISK_THRESHOLD}) can be reported. Provided score: {payload.risk_score}."
             ),
         )
 
     # 4. One report per user
-    tx_id = str(payload.transaction_context.get("transaction_id", "NO_TX_ID"))
-    if payload.sender_id in _submitted_reports_cache or sender_has_reported(db, payload.sender_id):
-        raise HTTPException(
+    raw_transaction_id = payload.transaction_context.get("transaction_id")
+    tx_id = raw_transaction_id.strip() if isinstance(raw_transaction_id, str) else None
+    existing_report = get_sender_report(db, payload.sender_id)
+    if existing_report is not None:
+        return JSONResponse(
             status_code=status.HTTP_409_CONFLICT,
-            detail="You have already submitted a fraud report. Only one report is allowed per user.",
+            content={
+                "detail": "You have already submitted a fraud report. Only one report is allowed per user.",
+                "report_id": existing_report.report_id,
+            },
         )
-
-    _submitted_reports_cache.add(payload.sender_id)
 
     report_id = f"REP-{uuid.uuid4().hex[:12].upper()}"
     persist_receiver_report(
         db,
-        transaction_id=None if tx_id == "NO_TX_ID" else tx_id,
+        transaction_id=tx_id or None,
         sender_id=payload.sender_id,
         receiver_id=payload.receiver_id,
         risk_score=payload.risk_score,
@@ -133,7 +133,7 @@ def create_report(
     return ReportResponse(
         report_id=report_id,
         status="SUBMITTED",
-        message="User report successfully registered and escalated for security review.",
+        message="This report is recorded in the SentinelAI prototype for fraud review.",
         submitted_at=datetime.now(timezone.utc),
         sender_id=payload.sender_id,
         receiver_id=payload.receiver_id,

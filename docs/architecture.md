@@ -2,7 +2,7 @@
 
 ## Purpose
 
-SentinelAI is a pre-authorization fraud risk layer for UPI and digital payment flows. A transaction is evaluated before final fund dispatch so suspicious activity can trigger additional verification or blocking.
+SentinelAI is an explainable, risk-adaptive pre-authorization layer for UPI and digital payment flows. The prototype evaluates transaction context before its simulated payment continuation so risk can trigger proportional user intervention.
 
 ## Request Flow
 
@@ -33,7 +33,7 @@ score                       velocity / receiver /
              Decision classification
         APPROVE <= 40
         VERIFY  40 < score <= 75
-        BLOCK   > 75
+        BLOCK recommendation > 75
                       |
                       v
        Explanation + recommended policy
@@ -77,13 +77,15 @@ The current implemented weighting is:
 
 The weighted result is rounded to one decimal place and mapped to `APPROVE`, `VERIFY` or `BLOCK`.
 
+`BLOCK` is a recommendation by the risk engine. HIGH risk interrupts the prototype flow, explains the signals and asks the user to cancel/report or explicitly acknowledge and complete step-up verification. The override does not alter the original score or decision. The demonstration PIN is `4092`; the fingerprint control is simulated.
+
 ### Explainability Layer
 
-The `explanation_reason` module operates on an already generated risk result. It does not independently score the transaction. It creates user-facing minimal and smartphone explanations from the decision, reason codes, risk breakdown, score and model-based feature contribution information.
+SHAP `TreeExplainer` explains only the fitted Isolation Forest anomaly component. When unavailable, training-mean feature ablation is returned under the explicit method label `ABLATION_FALLBACK`. Neither explanation is used to calculate composite risk. The `explanation_reason` module operates on an already generated risk result and does not independently score the transaction.
 
 ### Persistence
 
-Evaluated transactions and their associated risk evidence are stored through SQLAlchemy in PostgreSQL. Evaluation persistence is committed before a successful response is returned.
+Evaluated transactions and their associated risk evidence are stored through SQLAlchemy in PostgreSQL. Evaluation persistence is committed before a successful response is returned. Receiver reports persist sender/receiver identifiers, transaction context, risk score, report reference and transaction ID when supplied.
 
 ## Deployment Architecture
 
@@ -111,4 +113,4 @@ Docker Compose waits for PostgreSQL health before starting the backend and waits
 
 ## Current Scope
 
-SentinelAI is a hackathon prototype. It demonstrates pre-authorization risk evaluation, explainable decisions, persistence, transaction reporting and Dockerized deployment. It should not be represented as a production banking authorization system or as a replacement for regulated payment infrastructure.
+The browser labels each result as `FASTAPI BACKEND` or `LOCAL DEMO ENGINE`. The local engine is a deterministic heuristic fallback, not the Isolation Forest or a backend evaluation. SentinelAI demonstrates an explainable risk-adaptive pre-authorization layer; it is not a replacement for banks, NPCI, UPI infrastructure or regulated fraud platforms and does not authorize real payments.

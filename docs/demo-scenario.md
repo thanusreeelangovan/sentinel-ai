@@ -32,7 +32,7 @@ Decision: APPROVE
 Action: proceed normally
 ```
 
-Narration: SentinelAI evaluates the payment before authorization. Since the risk remains within the normal range, the transaction proceeds without additional friction.
+Narration: SentinelAI recommends approval within the normal range, so the prototype continues with minimal friction.
 
 ### 3. Medium-risk transaction
 
@@ -46,9 +46,9 @@ Decision: VERIFY
 Action: step-up verification required
 ```
 
-Demo the frontend verification flow by asking the user to re-enter the UPI PIN before payment continuation.
+Demo the frontend verification flow by asking the user to complete the additional prototype step-up PIN check before payment continuation.
 
-Narration: SentinelAI detected elevated risk but not enough evidence for a hard block, so it introduces an additional verification step before money movement.
+Narration: SentinelAI recommends verification, adding proportional friction without treating the receiver as fraudulent by itself.
 
 ### 4. High-risk transaction
 
@@ -62,13 +62,13 @@ Decision: BLOCK
 Action: intercept the transaction
 ```
 
-Show the high-risk warning and the prototype's re-verification flow. Be precise when presenting this: the backend decision returned for this state is `BLOCK`. Any later continuation after explicit verification is a frontend / prototype flow and does not change the original risk classification.
+Show the high-risk warning, explain why and demonstrate the available choices: view the risk explanation, report the receiver, cancel, or choose “I Recognise This Payment.” Continuing requires the demonstration PIN `4092`. The biometric control is simulated. The backend decision returned for this state remains `BLOCK`; successful verification changes only the prototype flow outcome, not the original score, risk level or recommendation.
 
 Narration: Instead of discovering suspicious activity after the transfer, SentinelAI intercepts the payment at the pre-authorization stage and surfaces the reasons that caused the high-risk decision.
 
 ### 5. Explainability
 
-For medium and high-risk cases, show the risk score, reason codes, risk breakdown and user-facing explanation. Detailed risk information is available at:
+For medium and high-risk cases, show the risk score, reason codes, weighted risk breakdown and user-facing explanation. The evaluation response reports whether the model explanation is `SHAP_TREE_EXPLAINER` or `ABLATION_FALLBACK`. SHAP covers only Isolation Forest anomaly features, not the full composite. Detailed risk information is available at:
 
 ```http
 GET /transactions/{transaction_id}/risk-details
@@ -89,13 +89,13 @@ This demonstrates that the risk result is persisted rather than existing only in
 
 ### 7. Report transaction
 
-For an evaluated transaction, call:
+For a high-risk transaction, select **Report Receiver** in the phone simulator. The API endpoint is:
 
 ```http
-POST /transactions/{transaction_id}/report
+POST /reports
 ```
 
-The report is stored as an audit event without rescoring the transaction. Re-reporting the same transaction returns an already-reported response.
+The report is stored with its sender, receiver, transaction context, risk score, optional transaction ID and generated reference without rescoring the transaction. It is a SentinelAI prototype review record, not an external fraud-registry submission.
 
 ## Demo Recovery
 

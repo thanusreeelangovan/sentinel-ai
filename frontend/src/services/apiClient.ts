@@ -4,9 +4,12 @@ import { calculateRiskAssessment } from './riskEngine';
 const viteEnv = (import.meta as ImportMeta & {
   env?: { DEV?: boolean; VITE_API_URL?: string };
 }).env;
-const backendBaseUrl = (viteEnv?.VITE_API_URL || (viteEnv?.DEV ? 'http://localhost:8000' : undefined))?.replace(/\/$/, '');
-export const DEFAULT_BACKEND_URL = backendBaseUrl
-  ? `${backendBaseUrl}/transactions/evaluate`
+export const DEFAULT_BACKEND_BASE_URL = (viteEnv?.VITE_API_URL || (viteEnv?.DEV ? 'http://localhost:8000' : '')).replace(/\/+$/, '');
+export const DEFAULT_REPORTS_URL = DEFAULT_BACKEND_BASE_URL
+  ? `${DEFAULT_BACKEND_BASE_URL}/reports`
+  : '';
+export const DEFAULT_BACKEND_URL = DEFAULT_BACKEND_BASE_URL
+  ? `${DEFAULT_BACKEND_BASE_URL}/transactions/evaluate`
   : '/transactions/evaluate';
 
 export interface BackendConnectionStatus {
@@ -61,14 +64,23 @@ export async function evaluateTransactionWithBackend(
 
     if (response.ok) {
       const realData = await response.json();
+      if (
+        !['APPROVE', 'VERIFY', 'BLOCK'].includes(realData.decision) ||
+        !['LOW', 'MEDIUM', 'HIGH'].includes(realData.risk_level) ||
+        !['SHAP_TREE_EXPLAINER', 'ABLATION_FALLBACK'].includes(realData.model_explanation_method) ||
+        !Array.isArray(realData.model_feature_contributions) ||
+        !realData.signals
+      ) {
+        throw new Error('Backend response is missing required risk or model explanation fields');
+      }
       const realLatency = Math.round(performance.now() - startTime);
 
       // Parse backend response into frontend RiskAssessment format
       const realAssessment: RiskAssessment = {
         transaction_id: realData.transaction_id || tx.transaction_id,
         composite_score: Number(realData.composite_score ?? realData.risk_score ?? 0),
-        decision: realData.decision || (realData.composite_score <= 40 ? 'APPROVE' : realData.composite_score <= 75 ? 'VERIFY' : 'BLOCK'),
-        risk_level: realData.composite_score <= 40 ? 'LOW' : realData.composite_score <= 75 ? 'MEDIUM' : 'HIGH',
+        decision: realData.decision,
+        risk_level: realData.risk_level,
         risk_breakdown: {
           anomaly: Number(realData.risk_breakdown?.anomaly ?? 0),
           velocity: Number(realData.risk_breakdown?.velocity ?? 0),
@@ -78,9 +90,13 @@ export async function evaluateTransactionWithBackend(
         reason_codes: Array.isArray(realData.reason_codes) ? realData.reason_codes : [],
         explanation: realData.explanation || `Evaluated by FastAPI Backend: ${realData.decision} with composite score ${realData.composite_score}/100.`,
         policy_applied: realData.policy_applied || 'POLICY_FASTAPI_EVALUATION',
-        model_version: realData.model_version || 'fastapi_production_v2.8',
+        model_version: realData.model_version || 'iforest_v1',
         evaluated_at: realData.evaluated_at || new Date().toISOString(),
         latency_ms: realData.latency_ms || realLatency,
+        evaluation_source: 'FASTAPI BACKEND',
+        model_explanation_method: realData.model_explanation_method,
+        model_feature_contributions: realData.model_feature_contributions,
+        signals: realData.signals,
         evaluation_source: 'FASTAPI_BACKEND',
         model_explanation_method: realData.model_explanation_method || 'UNAVAILABLE',
         model_explanation_features: Array.isArray(realData.model_explanation_features)
@@ -105,6 +121,9 @@ export async function evaluateTransactionWithBackend(
   } catch (err: unknown) {
     const errorMsg = err instanceof Error ? err.message : 'Backend unreachable';
     // Fallback to deterministic local engine if backend isn't online
+    const localAssessment = calculateRiskAssessment(tx);
+    localAssessment.evaluation_source = 'LOCAL DEMO ENGINE';
+    localAssessment.model_explanation_method = 'LOCAL_HEURISTIC';
     const localAssessment = {
       ...calculateRiskAssessment(tx),
       evaluation_source: 'LOCAL_DEMO_ENGINE' as const,

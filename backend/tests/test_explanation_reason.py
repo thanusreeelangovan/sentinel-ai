@@ -226,6 +226,8 @@ def test_from_evaluate_and_read_models() -> None:
             hardware_trust_score=64,
             human_probability=72,
         ),
+        model_explanation_method="ABLATION_FALLBACK",
+        model_feature_contributions=[],
         risk_score=68.0,
     )
     minimal = generate_minimal_explanation_from_result(response)
