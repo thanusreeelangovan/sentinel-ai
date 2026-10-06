@@ -8,11 +8,19 @@ SentinelAI is a hackathon prototype for pre-authorization fraud risk evaluation 
 |---:|---|---|---|
 | <= 40 | LOW | `APPROVE` | Proceed normally |
 | > 40 to 75 | MEDIUM | `VERIFY` | Step-up verification |
+feat/explainable-risk-interception
 | > 75 | HIGH | `BLOCK` recommendation | Intercept, explain the risk, and require explicit acknowledgement plus step-up verification to continue |
+=======
+| > 75 | HIGH | `BLOCK` risk recommendation | Intercept, explain the risk, and require an explicit verified user override to continue in the prototype |
+main
 
 The composite risk score uses 40% Isolation Forest anomaly, 25% velocity, 20% receiver and 15% behavioral signals. LOW recommends approval with minimal friction; MEDIUM recommends verification; HIGH/BLOCK recommends stopping the payment. HIGH is not an irreversible prototype-level system block: a user who explicitly recognises the payment can continue after step-up authentication. The original score and BLOCK recommendation remain unchanged for explanation and audit.
 
 The FastAPI response includes Tree SHAP contributions for the fitted Isolation Forest anomaly component only. When Tree SHAP cannot run, the backend reports `ABLATION_FALLBACK`; these values are never presented as SHAP. Velocity, receiver and behavioral risk remain separately calculated rule-based components. If FastAPI is unavailable, the simulator clearly labels its deterministic heuristic result `LOCAL DEMO ENGINE`; reporting still requires the configured reporting API.
+
+The HIGH tier is a strong risk-engine recommendation to stop the payment. In the prototype consumer flow, the user may still continue only after reading the warning and completing step-up verification. This keeps the final authorization with the verified user while preserving the risk recommendation for audit and explanation.
+
+The Isolation Forest explanation uses Tree SHAP when available. SHAP is scoped only to the anomaly model. Rule-based velocity, receiver and behavioral scores are shown separately and are not presented as SHAP output.
 
 ## Tech Stack
 

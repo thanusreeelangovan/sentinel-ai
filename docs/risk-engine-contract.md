@@ -11,6 +11,9 @@ The backend uses exactly three transaction decisions:
 | Above 75 to 100 | HIGH | `BLOCK` recommendation | Intercept and recommend stopping; continuation requires explicit user acknowledgement and step-up verification in the prototype |
 
 The backend decision is authoritative. `BLOCK` is the risk engine recommendation, not an irreversible system-level payment block in this prototype. A verified user may choose “I Recognise This Payment” and continue after step-up verification. The original HIGH/BLOCK evaluation and score remain stored and unchanged; the override does not recalculate risk.
+| Above 75 to 100 | HIGH | `BLOCK` | Strong stop recommendation. The prototype intercepts the payment, explains why, and requires an explicit verified user override before any continuation |
+
+The backend decision is authoritative as a risk-engine recommendation. The prototype payment simulator may allow a verified user to override a HIGH / `BLOCK` recommendation after an explicit warning and step-up authentication. That user action does not rewrite the original risk decision.
 
 ## Composite Score
 
@@ -44,7 +47,7 @@ Represents receiver or beneficiary risk identified by the rule layer.
 
 Represents behavioral deviation identified from available transaction and user context.
 
-The evaluation service can additionally expose contextual presentation signals, reason codes and model-based feature contributions. These support explanation and UI presentation but do not replace the four weighted inputs above.
+The evaluation service can additionally expose contextual presentation signals, reason codes and model-based feature contributions. The anomaly-model contributions use Tree SHAP when available and are labelled with the explanation method. These support explanation and UI presentation but do not replace the four weighted inputs above.
 
 ## Evaluation Sequence
 

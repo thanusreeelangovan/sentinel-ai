@@ -50,6 +50,13 @@ For model explainability, the service uses SHAP `TreeExplainer` on the fitted Is
 If Tree SHAP is unavailable or returns unusable output in a deployed environment, the service replaces one feature at a time with its training mean and measures the change in Isolation Forest output. This fallback is labelled `ABLATION_FALLBACK` in the response and logs the fallback reason. Ablation values are never labelled or displayed as SHAP. Neither method is a causal explanation.
 
 The contribution values are in the explainer's model-output units. They must not be interpreted as points in the normalized 0–100 anomaly score or as contributions to the composite score.
+For explainability, the Isolation Forest service uses SHAP TreeExplainer to calculate per-feature contributions for the fitted anomaly model. The eight largest absolute contributions are exposed with the evaluation response and can be shown in the consumer explanation view.
+
+SHAP explains the Isolation Forest anomaly model only. It does not explain the rule-based velocity, receiver or behavioral scores and therefore must not be presented as an explanation of the entire composite score.
+
+If Tree SHAP cannot run for the model in a deployed environment, the service falls back to the previous training-mean ablation method and explicitly reports `ABLATION_FALLBACK` rather than labelling those values as SHAP.
+
+These contributions are model explanations, not causal evidence that a feature caused fraud.
 
 ## Current Limitations
 

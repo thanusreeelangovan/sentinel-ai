@@ -82,6 +82,7 @@ export const ReportReceiverButton: React.FC<ReportReceiverButtonProps> = ({
   riskAssessment,
   transactionContext,
   apiBaseUrl = DEFAULT_REPORTS_URL,
+  apiBaseUrl = '',
   onReportSubmitted,
   className = '',
 }) => {
@@ -224,6 +225,7 @@ export const ReportReceiverButton: React.FC<ReportReceiverButtonProps> = ({
               </p>
               <p className="leading-relaxed">
                 This report records the receiver and supporting transaction risk evidence in the SentinelAI prototype for fraud review.
+                Filing this report records the receiver and supporting transaction risk evidence in the SentinelAI prototype for fraud review. It does not submit data to NPCI or an external banking fraud registry.
               </p>
             </div>
 
@@ -261,7 +263,7 @@ export const ReportReceiverButton: React.FC<ReportReceiverButtonProps> = ({
         <div className="flex items-start gap-2 p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 animate-fadeIn">
           <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0 mt-0.5" />
           <div className="text-[11px]">
-            <p className="font-bold">Report Successfully Filed</p>
+            <p className="font-bold">SentinelAI Review Report Filed</p>
             <p className="text-emerald-700 mt-0.5 font-mono">Reference: {reportId}</p>
           </div>
         </div>

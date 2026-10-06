@@ -24,6 +24,8 @@ import {
 import { Payee, SharedTransaction, RiskAssessment } from '../types/sentinel';
 import { PRESET_PAYEES } from '../data/mockData';
 import { generateRiskExplanationFeatures } from '../services/riskEngine';
+import { generateSHAPFeatures } from '../services/riskEngine';
+import { DEFAULT_BACKEND_URL } from '../services/apiClient';
 import { ReportReceiverButton } from './ReportReceiverButton';
 
 interface PhoneSimulatorProps {
@@ -62,6 +64,7 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
   const [highRiskOverrideVerified, setHighRiskOverrideVerified] = useState<boolean>(false);
   const [activeTooltip, setActiveTooltip] = useState<string | null>(null);
   const [selectedPayeeId, setSelectedPayeeId] = useState<string | null>(null);
+  const reportApiBaseUrl = DEFAULT_BACKEND_URL.replace('/transactions/evaluate', '');
 
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isShaking, setIsShaking] = useState<boolean>(false);
@@ -253,6 +256,13 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
         } else {
           setIsShaking(true);
           setErrorMessage('Incorrect demonstration PIN. Please try again.');
+          if (nextPin === '4092') {
+            onLogEvent?.('SECONDARY_PIN_VERIFIED', { success: true, timestamp: new Date().toISOString() });
+            deductBalance(transaction.amount);
+            setScreen('result');
+          } else {
+            setIsShaking(true);
+            setErrorMessage('Invalid demo security PIN. Use 4092.');
             onLogEvent?.('SECONDARY_PIN_FAILED', { error: 'AUTH_FAILED' });
             setTimeout(() => {
               setIsShaking(false);
@@ -671,6 +681,10 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
               </p>
             </div>
 
+            <p className="text-center text-[9px] font-mono text-gray-500 mb-2">
+              Prototype authentication • Demo PIN 4092 • Biometric button simulates successful identity verification
+            </p>
+
             {/* Keypad */}
             <div className="grid grid-cols-3 gap-3 max-w-[280px] mx-auto w-full mb-4">
               {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map(num => (
@@ -916,6 +930,11 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
                       {assessment.evaluation_source === 'FASTAPI BACKEND'
                         ? 'ISOLATION FOREST MODEL CONTRIBUTIONS'
                         : 'LOCAL DEMO RISK SIGNALS'}
+                      {assessment.model_explanation_method === 'SHAP_TREE_EXPLAINER'
+                        ? 'SHAP MODEL EXPLANATION'
+                        : assessment.model_explanation_method === 'ABLATION_FALLBACK'
+                        ? 'MODEL CONTRIBUTION FALLBACK'
+                        : 'RISK FEATURE EXPLANATION'}
                     </span>
                     <span className="font-mono text-[9px] px-1.5 py-0.5 rounded bg-red-950 text-red-400 border border-red-800">
                       {assessment.evaluation_source === 'FASTAPI BACKEND'
@@ -932,6 +951,18 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
 
                   <div className="space-y-1.5 text-[10px]">
                     {generateRiskExplanationFeatures(assessment, transaction).map((feat, idx) => (
+                    {(assessment.model_explanation_features?.length
+                      ? assessment.model_explanation_features.map((item) => ({
+                          name: item.feature.split('_').join(' '),
+                          category: 'ANOMALY MODEL',
+                          impact_score: Number(item.contribution.toFixed(3)),
+                          description: 'Contribution to the Isolation Forest model output for this transaction.',
+                          weight_percentage: 0,
+                          raw_value: String(item.value),
+                          is_positive_risk: item.contribution > 0,
+                        }))
+                      : generateSHAPFeatures(assessment, transaction)
+                    ).map((feat, idx) => (
                       <div 
                         key={idx} 
                         className="p-2 rounded-xl bg-[#121216] border border-white/5 space-y-1"
@@ -950,6 +981,7 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
                             {feat.model_contribution !== undefined
                               ? 'model contribution'
                               : `weight ${feat.weight_percentage}%`}
+                            {assessment.model_explanation_features?.length ? 'Model contribution' : `Heuristic weight: ${feat.weight_percentage}%`}
                           </span>
                         </div>
                         <p className="text-[9px] leading-tight text-gray-400">{feat.description}</p>
@@ -988,6 +1020,7 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
                   user_context: transaction.user_context,
                   note: transaction.note,
                 }}
+                apiBaseUrl={reportApiBaseUrl}
                 onReportSubmitted={(repId) => onLogEvent?.('FRAUD_REPORT_SUBMITTED', { report_id: repId })}
               />
 
@@ -1014,6 +1047,7 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
                   className="flex-1 py-3 px-3 rounded-2xl text-white font-bold text-xs flex items-center justify-center gap-1.5 bg-rose-600 hover:bg-rose-500 shadow-md transition-all active:scale-[0.98]"
                 >
                   <span>{assessment.composite_score > 75 ? 'I Recognise This Payment' : 'Continue to verification'}</span>
+                  <span>{assessment.composite_score > 75 ? 'I Recognise This Payment' : 'Verify & Continue'}</span>
                   <ArrowRight className="w-3.5 h-3.5" />
                 </button>
               </div>
@@ -1062,6 +1096,9 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
                   {assessment.composite_score > 75 ? 'Verified acknowledgement required to override the stop recommendation' : 'Step-up authentication'}
                 </p>
                 <h4 className="text-sm font-bold text-white mt-0.5">{transaction.receiver_name || transaction.receiver_id}</h4>
+                  {assessment.composite_score > 75 ? 'High Risk User Override Verification' : 'Step-Up Verification'}
+                </p>
+                <h4 className="text-sm font-bold text-white mt-0.5">{transaction.receiver_name}</h4>
                 <div className="text-2xl font-black font-mono mt-0.5 text-rose-500">
                   ₹{transaction.amount.toLocaleString('en-IN')}
                 </div>
@@ -1180,6 +1217,13 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
                 {highRiskOverrideVerified && assessment.risk_level === 'HIGH' && (
                   <div className="inline-flex items-center gap-1 mt-2 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase bg-red-950 text-red-300 border border-red-800">
                     <span>HIGH RISK RECOMMENDATION OVERRIDDEN AFTER DEMO PIN VERIFICATION</span>
+                {assessment.composite_score > 40 && (
+                  <div className={`inline-flex items-center gap-1 mt-2 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase ${
+                    assessment.composite_score > 75 
+                      ? 'bg-red-950 text-red-400 border border-red-800' 
+                      : 'bg-amber-950 text-amber-400 border border-amber-800'
+                  }`}>
+                    <span>{assessment.composite_score > 75 ? 'High-Risk Recommendation Overridden by Verified User' : 'Step-Up Verification Completed'}</span>
                   </div>
                 )}
                 {highRiskOverrideVerified && assessment.risk_level === 'HIGH' && (
@@ -1264,6 +1308,10 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
                 <div className="flex items-center justify-between">
                   <span>Prototype status:</span>
                   <span className="font-bold text-emerald-400">Demo payment completed</span>
+                  <span>Evaluation:</span>
+                  <span className="font-bold text-rose-400">
+                    {assessment.evaluation_source === 'FASTAPI_BACKEND' ? 'FastAPI Backend' : 'Local Demo Engine'}
+                  </span>
                 </div>
               </div>
 
