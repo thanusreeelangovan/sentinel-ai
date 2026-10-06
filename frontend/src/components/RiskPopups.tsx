@@ -60,7 +60,7 @@ export const RiskPopups: React.FC<RiskPopupsProps> = ({
                 <div className="mt-3 flex items-center gap-2">
                   <div className="flex items-center gap-1 text-[11px] font-mono text-amber-300 bg-amber-950/40 px-2 py-1 rounded border border-amber-500/30">
                     <CheckCircle2 className="w-3 h-3 text-amber-400" />
-                    <span>Irreversible User Override Active</span>
+                    <span>Step-Up Verification Required</span>
                   </div>
                   {onDismissMediumModal && (
                     <button
@@ -108,7 +108,7 @@ export const RiskPopups: React.FC<RiskPopupsProps> = ({
 
               <div className="flex items-center gap-2 mb-2">
                 <span className="px-3 py-1 text-xs font-mono font-bold uppercase rounded-full bg-red-950/80 text-red-300 border border-red-500/50">
-                  MANDATORY DUAL-PIN CHALLENGE
+                  HIGH-RISK USER OVERRIDE
                 </span>
                 <span className="px-3 py-1 text-xs font-mono font-bold rounded-full bg-red-500 text-slate-950">
                   SCORE: {score}/100
@@ -116,11 +116,11 @@ export const RiskPopups: React.FC<RiskPopupsProps> = ({
               </div>
 
               <h3 className="text-2xl font-black text-white tracking-tight sm:text-3xl mb-3">
-                High Risk Warning Acknowledged
+                High Risk Payment Intercepted
               </h3>
 
               <p className="text-sm text-red-200/90 max-w-lg mb-6 leading-relaxed">
-                SentinelAI detected critical anomaly signals for <span className="font-bold text-white font-mono">₹{transaction.amount.toLocaleString('en-IN')}</span> to <span className="font-bold text-white">{transaction.receiver_name}</span>. Entering your secondary PIN authorizes immediate, irreversible dispatch under user liability.
+                SentinelAI recommends stopping this <span className="font-bold text-white font-mono">₹{transaction.amount.toLocaleString('en-IN')}</span> payment to <span className="font-bold text-white">{transaction.receiver_name}</span>. If you recognise the transaction, you may explicitly override the recommendation after step-up verification.
               </p>
 
               {/* Threat Signals */}
@@ -150,7 +150,7 @@ export const RiskPopups: React.FC<RiskPopupsProps> = ({
                     onClick={onDismissHighModal}
                     className="w-full py-3 px-5 rounded-xl bg-gradient-to-r from-red-600 to-rose-700 hover:from-red-500 hover:to-rose-600 text-white font-bold text-sm shadow-[0_0_25px_rgba(239,68,68,0.5)] transition flex items-center justify-center gap-2"
                   >
-                    <span>Proceed to Secondary PIN Entry on Device</span>
+                    <span>I Recognise This Payment</span>
                     <ArrowRight className="w-4 h-4" />
                   </button>
                 )}
