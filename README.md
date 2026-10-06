@@ -8,9 +8,13 @@ SentinelAI is a hackathon prototype for pre-authorization fraud risk evaluation 
 |---:|---|---|---|
 | <= 40 | LOW | `APPROVE` | Proceed normally |
 | > 40 to 75 | MEDIUM | `VERIFY` | Step-up verification |
-| > 75 | HIGH | `BLOCK` | Intercept and show high-risk warning |
+| > 75 | HIGH | `BLOCK` risk recommendation | Intercept, explain the risk, and require an explicit verified user override to continue in the prototype |
 
 The composite risk score uses 40% Isolation Forest anomaly, 25% velocity, 20% receiver and 15% behavioral signals. The explanation layer describes the completed risk result and does not independently score transactions.
+
+The HIGH tier is a strong risk-engine recommendation to stop the payment. In the prototype consumer flow, the user may still continue only after reading the warning and completing step-up verification. This keeps the final authorization with the verified user while preserving the risk recommendation for audit and explanation.
+
+The Isolation Forest explanation uses Tree SHAP when available. SHAP is scoped only to the anomaly model. Rule-based velocity, receiver and behavioral scores are shown separately and are not presented as SHAP output.
 
 ## Tech Stack
 
