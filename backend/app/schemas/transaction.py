@@ -38,7 +38,7 @@ class Transaction(BaseModel):
         ...,
         gt=0,
         le=100000,
-        description="Transaction amount in INR, strictly between ₹1.00 and ₹1,00,000.00 (NPCI/RBI limit)",
+        description="Transaction amount in INR, constrained by SentinelAI prototype bounds",
     )
     currency: str
     receiver_id: str

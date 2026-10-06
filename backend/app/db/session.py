@@ -13,6 +13,7 @@ from app.models import (  # noqa: F401
     ip_network_event,
     login_event,
     risk_assessment,
+    receiver_report,
     rule_event,
     transaction,
     user,

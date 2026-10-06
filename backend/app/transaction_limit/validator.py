@@ -1,14 +1,10 @@
-"""
-UPI Transaction Amount Limit Validation Module.
-Enforces NPCI and RBI regulatory cap of INR 100,000.00 for standard UPI transactions.
-Owner: Krrish Kamath (AI/ML & Transaction Security Layer)
-"""
+"""Validate the prototype's per-transaction amount and currency precision."""
 
 from decimal import Decimal, InvalidOperation
 from typing import Tuple, Optional
 
 
-# NPCI & RBI Statutory Limits
+# Prototype amount bounds; these are not claims about external payment-network limits.
 MAX_UPI_LIMIT: Decimal = Decimal("100000.00")
 MIN_UPI_LIMIT: Decimal = Decimal("1.00")
 
@@ -20,7 +16,7 @@ ERR_CODE_NON_NUMERIC = "ERR_NON_NUMERIC_INPUT"
 ERR_CODE_DECIMAL = "ERR_INVALID_DECIMAL"
 
 ERROR_MESSAGES = {
-    ERR_CODE_EXCEEDED: "Transaction limit exceeded: Maximum allowed amount per UPI transaction is ₹1,00,000.",
+    ERR_CODE_EXCEEDED: "Transaction limit exceeded: The prototype maximum is ₹1,00,000.",
     ERR_CODE_MINIMUM: "Transaction amount must be at least ₹1.00.",
     ERR_CODE_NEGATIVE: "Negative or zero transaction amounts are prohibited.",
     ERR_CODE_NON_NUMERIC: "Please enter a valid numeric currency amount.",
@@ -29,7 +25,7 @@ ERROR_MESSAGES = {
 
 
 class UpiLimitValidationError(ValueError):
-    """Raised when a UPI transaction violates regulatory or formatting bounds."""
+    """Raised when an amount violates prototype or formatting bounds."""
     def __init__(self, code: str, message: Optional[str] = None):
         self.code = code
         self.message = message or ERROR_MESSAGES.get(code, "Invalid transaction amount.")
@@ -38,7 +34,7 @@ class UpiLimitValidationError(ValueError):
 
 def validate_upi_amount(amount: Decimal | float | int | str) -> Tuple[bool, Optional[str], Decimal]:
     """
-    Validates that a proposed UPI transaction amount complies with NPCI/RBI statutory limits.
+    Validates that an amount complies with the prototype's configured bounds.
 
     Args:
         amount: Raw amount (Decimal, float, int, or string representation)

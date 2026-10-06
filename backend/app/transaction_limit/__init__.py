@@ -1,6 +1,5 @@
 """
-Transaction Limit Package.
-Enforces NPCI and RBI regulatory constraints for UPI transactions across the SentinelAI backend.
+Prototype transaction amount and formatting limits.
 """
 
 from app.transaction_limit.validator import (
