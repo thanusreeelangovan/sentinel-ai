@@ -23,13 +23,14 @@ import {
 } from 'lucide-react';
 import { Payee, SharedTransaction, RiskAssessment } from '../types/sentinel';
 import { PRESET_PAYEES } from '../data/mockData';
-import { generateSHAPFeatures } from '../services/riskEngine';
+import { generateRiskExplanationFeatures } from '../services/riskEngine';
 import { ReportReceiverButton } from './ReportReceiverButton';
 
 interface PhoneSimulatorProps {
   transaction: SharedTransaction;
   setTransaction: React.Dispatch<React.SetStateAction<SharedTransaction>>;
   assessment: RiskAssessment | null;
+  evaluationError?: string | null;
   onExecuteTransaction: (tx: SharedTransaction) => void;
   onReset: () => void;
   isProcessing: boolean;
@@ -43,6 +44,7 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
   transaction,
   setTransaction,
   assessment,
+  evaluationError,
   onExecuteTransaction,
   onReset,
   isProcessing,
@@ -57,6 +59,7 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
   const [amountError, setAmountError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [showShapDetails, setShowShapDetails] = useState<boolean>(false);
+  const [highRiskOverrideVerified, setHighRiskOverrideVerified] = useState<boolean>(false);
   const [activeTooltip, setActiveTooltip] = useState<string | null>(null);
   const [selectedPayeeId, setSelectedPayeeId] = useState<string | null>(null);
 
@@ -150,7 +153,7 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
     if (isNaN(num)) return;
 
     if (num > 100000) {
-      setAmountError('Transaction limit exceeded: Maximum allowed per UPI is ₹1,00,000.');
+      setAmountError('Prototype transaction limit exceeded: Maximum supported amount is ₹1,00,000.');
       return;
     }
 
@@ -242,13 +245,14 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
         setErrorMessage(null);
 
         if (nextPin.length === 4) {
-          if (nextPin === '1337' || nextPin === '4092' || nextPin === '9999' || nextPin.length === 4) {
+        if (nextPin === '4092') {
             onLogEvent?.('SECONDARY_PIN_VERIFIED', { success: true, timestamp: new Date().toISOString() });
-            deductBalance(transaction.amount);
-            setScreen('result');
-          } else {
-            setIsShaking(true);
-            setErrorMessage('Invalid Secondary Security PIN. Try 1337');
+          setHighRiskOverrideVerified(assessment?.risk_level === 'HIGH');
+          deductBalance(transaction.amount);
+          setScreen('result');
+        } else {
+          setIsShaking(true);
+          setErrorMessage('Incorrect demonstration PIN. Please try again.');
             onLogEvent?.('SECONDARY_PIN_FAILED', { error: 'AUTH_FAILED' });
             setTimeout(() => {
               setIsShaking(false);
@@ -274,6 +278,7 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
     setPrimaryPin('');
     setSecondaryPin('');
     setShowShapDetails(false);
+    setHighRiskOverrideVerified(false);
     setAmountError(null);
     setErrorMessage(null);
     onReset();
@@ -323,19 +328,19 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
   const getReasonCodeExplanation = (code: string) => {
     switch (code) {
       case 'HIGH_ANOMALY':
-        return 'Isolation Forest anomaly detection scored transaction features >60 standard deviations from user baseline.';
+        return 'The Isolation Forest anomaly model found the transaction pattern unusual relative to its training baseline.';
       case 'HIGH_TRANSACTION_VELOCITY':
-        return 'Multiple transaction attempts detected within a rapid 120-second rolling window.';
+        return 'Rule-based transaction context indicates unusually high payment velocity.';
       case 'SUSPICIOUS_RECEIVER':
-        return 'Receiver VPA has zero prior history with this sender or was registered <24 hours ago.';
+        return 'Receiver context raised the receiver-risk component; an unfamiliar receiver alone does not determine the overall result.';
       case 'BEHAVIORAL_DEVIATION':
-        return 'Keystroke timing rhythm and gyroscope posture deviate significantly from natural human motor variance.';
+        return 'Rule-based behavioral context differs from the available transaction history; this is not biometric measurement.';
       case 'UNUSUAL_AMOUNT_SURGE':
-        return 'Amount is >3x higher than typical 90-day average transaction ticket sizes.';
+        return 'The transaction amount is above the usual transaction range supplied in the user context.';
       case 'EMULATOR_DEVICE_DETECTED':
-        return 'Hardware fingerprint detected rooted x86 emulator environment with synthetic sensors.';
+        return 'The submitted device type indicates an emulator in this prototype; no hardware attestation is performed.';
       default:
-        return 'Signal evaluated by SentinelAI real-time Zero-Trust policy engine.';
+        return 'This reason code was raised by the SentinelAI rule-based risk evaluation.';
     }
   };
 
@@ -471,7 +476,7 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
             </div>
 
             <p className="text-center text-[10px] text-gray-500 font-mono mt-3">
-              Protected by SentinelAI Real-Time Zero-Trust Engine
+              Pre-authorization risk assessment by SentinelAI
             </p>
           </div>
         )}
@@ -712,9 +717,9 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
             </div>
 
             <div className="space-y-1.5">
-              <h3 className="text-base font-bold text-white">Zero-Trust Pipeline Active</h3>
+              <h3 className="text-base font-bold text-white">Risk evaluation in progress</h3>
               <p className="text-xs text-gray-400 font-mono">
-                Running sub-millisecond behavioral anomaly extraction...
+                Evaluating the Isolation Forest anomaly model and contextual risk rules...
               </p>
             </div>
 
@@ -814,7 +819,7 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
                   {assessment.composite_score > 75 ? 'HIGH RISK INTERCEPTION' : 'SECURITY STEP-UP REQUIRED'}
                 </span>
                 <h3 className="text-base font-bold text-white">
-                  Security Verification Prompt
+                    {assessment.composite_score > 75 ? 'Payment intercepted for your review' : 'Additional verification required'}
                 </h3>
               </div>
 
@@ -856,16 +861,16 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
 
                 <div className="space-y-1">
                   <h4 className={`text-xs font-bold ${assessment.composite_score > 75 ? 'text-red-300' : 'text-amber-200'}`}>
-                    {assessment.composite_score > 75 ? 'Step 2 Verification Prompted (High Anomaly)' : 'Step 2 Verification Prompted'}
+                    {assessment.composite_score > 75 ? 'SentinelAI recommends stopping this payment' : 'Step-up verification is required'}
                   </h4>
                   <p className="text-[11px] leading-relaxed text-slate-300">
                     Composite anomaly rating is{' '}
                     <strong className={assessment.composite_score > 75 ? 'text-red-400 font-bold' : 'text-amber-400 font-bold'}>
                       {assessment.composite_score}/100
                     </strong>
-                    . {assessment.composite_score > 75 
-                      ? `Critical anomaly signals detected (${getInterstitialReasonSummary(assessment.reason_codes)}). Please enter your secondary PIN on the device to authorize immediate completion under user liability.`
-                      : 'Please re-enter your security PIN on the device to authorize immediate completion under user liability.'}
+                    . {assessment.composite_score > 75
+                      ? `Risk signals include ${getInterstitialReasonSummary(assessment.reason_codes)}. Your payment has not been sent. You can view why, report the receiver, cancel, or explicitly acknowledge this payment and complete step-up verification.`
+                      : 'Complete the additional verification on this device to continue.'}
                   </p>
                 </div>
 
@@ -873,10 +878,15 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
                   <div className="flex items-center gap-1">
                     <CheckCircle2 className={`w-3 h-3 ${assessment.composite_score > 75 ? 'text-red-400' : 'text-amber-400'}`} />
                     <span className={assessment.composite_score > 75 ? 'text-red-300/90 font-medium' : 'text-amber-300/90 font-medium'}>
-                      Irreversible User Override Active
+                      {assessment.evaluation_source}
                     </span>
                   </div>
                 </div>
+                {evaluationError && (
+                  <p className="text-[9px] text-amber-200 border-t border-white/5 pt-1">
+                    Backend unavailable; local demo evaluation used. {evaluationError}
+                  </p>
+                )}
               </div>
 
               {/* Transaction Context Pill */}
@@ -891,7 +901,7 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
                 <span>Receiver: <strong className="text-rose-400">{transaction.receiver_name || transaction.receiver_id}</strong></span>
               </div>
 
-              {/* Collapsible SHAP Feature Attribution Breakdown (View Button Toggle) */}
+              {/* Collapsible explanation for the backend model or local demo signals */}
               {showShapDetails && (
                 <div 
                   className="space-y-2 p-3 rounded-2xl border text-left animate-fadeIn max-h-[190px] overflow-y-auto"
@@ -903,34 +913,55 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
                   <div className="flex items-center justify-between text-[10px] font-mono font-bold border-b pb-1.5 border-white/10 text-white">
                     <span className="flex items-center gap-1">
                       <Sparkles className="w-3 h-3 text-rose-500" />
-                      SHAP FEATURE ATTRIBUTION
+                      {assessment.evaluation_source === 'FASTAPI BACKEND'
+                        ? 'ISOLATION FOREST MODEL CONTRIBUTIONS'
+                        : 'LOCAL DEMO RISK SIGNALS'}
                     </span>
                     <span className="font-mono text-[9px] px-1.5 py-0.5 rounded bg-red-950 text-red-400 border border-red-800">
-                      SCORE: {assessment.composite_score}/100
+                      {assessment.evaluation_source === 'FASTAPI BACKEND'
+                        ? assessment.model_explanation_method
+                        : `SCORE ${assessment.composite_score}/100`}
                     </span>
                   </div>
 
+                  <p className="text-[9px] leading-tight text-gray-400">
+                    {assessment.evaluation_source === 'FASTAPI BACKEND'
+                      ? 'Model contributions explain only the Isolation Forest anomaly component (40%), not the composite score. Other risk components are shown separately.'
+                      : 'Heuristic explanation from the deterministic local demo engine; this is not backend SHAP output.'}
+                  </p>
+
                   <div className="space-y-1.5 text-[10px]">
-                    {generateSHAPFeatures(assessment, transaction).map((feat, idx) => (
+                    {generateRiskExplanationFeatures(assessment, transaction).map((feat, idx) => (
                       <div 
                         key={idx} 
                         className="p-2 rounded-xl bg-[#121216] border border-white/5 space-y-1"
                       >
                         <div className="flex items-center justify-between font-bold">
                           <span className="truncate max-w-[170px] text-white">{feat.name}</span>
-                          <span className={`font-mono px-1.5 py-0.5 rounded text-[9px] font-bold ${
-                            feat.is_positive_risk ? 'bg-red-950 text-red-400 border border-red-800' : 'bg-emerald-950 text-emerald-400 border border-emerald-800'
-                          }`}>
-                            {feat.impact_score > 0 ? `+${feat.impact_score}` : feat.impact_score} pts
+                          <span className="font-mono px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-800 text-slate-200 border border-slate-700">
+                            {feat.model_contribution !== undefined
+                              ? `${feat.model_contribution > 0 ? '+' : ''}${feat.model_contribution.toFixed(4)}`
+                              : `${feat.risk_score}/100`}
                           </span>
                         </div>
                         <div className="flex items-center justify-between text-[9px] font-mono text-gray-400">
                           <span className="truncate max-w-[140px]">{feat.raw_value}</span>
-                          <span className="font-semibold">Weight: {feat.weight_percentage}%</span>
+                          <span className="font-semibold">
+                            {feat.model_contribution !== undefined
+                              ? 'model contribution'
+                              : `weight ${feat.weight_percentage}%`}
+                          </span>
                         </div>
                         <p className="text-[9px] leading-tight text-gray-400">{feat.description}</p>
                       </div>
                     ))}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-1 text-[9px] font-mono text-gray-300 border-t border-white/10 pt-2">
+                    <span>Anomaly · 40%: {assessment.risk_breakdown.anomaly}/100</span>
+                    <span>Velocity · 25%: {assessment.risk_breakdown.velocity}/100</span>
+                    <span>Receiver · 20%: {assessment.risk_breakdown.receiver}/100</span>
+                    <span>Behavior · 15%: {assessment.risk_breakdown.behavioral}/100</span>
                   </div>
                 </div>
               )}
@@ -950,7 +981,12 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
                   amount: transaction.amount,
                   currency: transaction.currency,
                   device_id: transaction.device_id,
-                  note: transaction.note
+                  device_type: transaction.device_type,
+                  receiver_type: transaction.receiver_type,
+                  location: transaction.location,
+                  ip_address: transaction.ip_address,
+                  user_context: transaction.user_context,
+                  note: transaction.note,
                 }}
                 onReportSubmitted={(repId) => onLogEvent?.('FRAUD_REPORT_SUBMITTED', { report_id: repId })}
               />
@@ -977,7 +1013,7 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
                   onClick={() => setScreen('step2_pin')}
                   className="flex-1 py-3 px-3 rounded-2xl text-white font-bold text-xs flex items-center justify-center gap-1.5 bg-rose-600 hover:bg-rose-500 shadow-md transition-all active:scale-[0.98]"
                 >
-                  <span>Continue</span>
+                  <span>{assessment.composite_score > 75 ? 'I Recognise This Payment' : 'Continue to verification'}</span>
                   <ArrowRight className="w-3.5 h-3.5" />
                 </button>
               </div>
@@ -1022,11 +1058,16 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
               </div>
 
               <div className="text-center mt-1">
-                <p className="text-[11px] text-gray-400">High Risk Step-Up Challenge</p>
-                <h4 className="text-sm font-bold text-white mt-0.5">{transaction.receiver_name}</h4>
+                <p className="text-[11px] text-gray-400">
+                  {assessment.composite_score > 75 ? 'Verified acknowledgement required to override the stop recommendation' : 'Step-up authentication'}
+                </p>
+                <h4 className="text-sm font-bold text-white mt-0.5">{transaction.receiver_name || transaction.receiver_id}</h4>
                 <div className="text-2xl font-black font-mono mt-0.5 text-rose-500">
                   ₹{transaction.amount.toLocaleString('en-IN')}
                 </div>
+                <p className="text-[9px] text-gray-500">
+                  Prototype authentication · demo PIN: 4092 · biometric control is simulated
+                </p>
                 
                 {/* PIN Dots */}
                 <div className={`flex items-center justify-center gap-4 my-3.5 ${isShaking ? 'animate-shake' : ''}`}>
@@ -1066,15 +1107,15 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
               <button
                 type="button"
                 onClick={() => {
-                  handlePinKeypadPress('1', true);
-                  setTimeout(() => handlePinKeypadPress('3', true), 80);
-                  setTimeout(() => handlePinKeypadPress('3', true), 160);
-                  setTimeout(() => handlePinKeypadPress('7', true), 240);
+                  handlePinKeypadPress('4', true);
+                  setTimeout(() => handlePinKeypadPress('0', true), 80);
+                  setTimeout(() => handlePinKeypadPress('9', true), 160);
+                  setTimeout(() => handlePinKeypadPress('2', true), 240);
                 }}
                 className="h-12 rounded-2xl font-mono text-xs font-semibold border transition flex flex-col items-center justify-center bg-[var(--phone-card)] border-[var(--border-default)] text-rose-400 hover:text-rose-300"
               >
                 <Fingerprint className="w-4 h-4" />
-                <span className="text-[8px] font-bold">Biometric</span>
+                <span className="text-[8px] font-bold">Simulated</span>
               </button>
               <button
                 type="button"
@@ -1136,14 +1177,15 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
                   </span>
                 </div>
 
-                {assessment.composite_score > 40 && (
-                  <div className={`inline-flex items-center gap-1 mt-2 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase ${
-                    assessment.composite_score > 75 
-                      ? 'bg-red-950 text-red-400 border border-red-800' 
-                      : 'bg-amber-950 text-amber-400 border border-amber-800'
-                  }`}>
-                    <span>Dual-PIN User Acknowledged Override</span>
+                {highRiskOverrideVerified && assessment.risk_level === 'HIGH' && (
+                  <div className="inline-flex items-center gap-1 mt-2 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase bg-red-950 text-red-300 border border-red-800">
+                    <span>HIGH RISK RECOMMENDATION OVERRIDDEN AFTER DEMO PIN VERIFICATION</span>
                   </div>
+                )}
+                {highRiskOverrideVerified && assessment.risk_level === 'HIGH' && (
+                  <p className="mt-1 text-[10px] text-red-200">
+                    Original risk decision remains {assessment.decision} at {assessment.composite_score}/100; the score was not changed.
+                  </p>
                 )}
               </div>
 
@@ -1201,8 +1243,27 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
                   <span className="font-bold text-white">{transaction.transaction_id}</span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span>Settlement:</span>
-                  <span className="font-bold text-rose-400">Irreversible Dispatch</span>
+                  <span>Recommendation:</span>
+                  <span className="font-bold text-rose-400">{assessment.decision} · {assessment.risk_level}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span>Evaluation source:</span>
+                  <span className="font-bold text-white">{assessment.evaluation_source}</span>
+                </div>
+                {evaluationError && (
+                  <div className="text-amber-200">
+                    Backend unavailable; local demo evaluation used: {evaluationError}
+                  </div>
+                )}
+                {assessment.evaluation_source === 'FASTAPI BACKEND' && (
+                  <div className="flex items-center justify-between">
+                    <span>Anomaly explanation:</span>
+                    <span className="font-bold text-white">{assessment.model_explanation_method}</span>
+                  </div>
+                )}
+                <div className="flex items-center justify-between">
+                  <span>Prototype status:</span>
+                  <span className="font-bold text-emerald-400">Demo payment completed</span>
                 </div>
               </div>
 

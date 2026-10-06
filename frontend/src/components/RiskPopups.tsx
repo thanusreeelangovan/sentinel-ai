@@ -54,13 +54,13 @@ export const RiskPopups: React.FC<RiskPopupsProps> = ({
                 </h4>
                 
                 <p className="text-xs text-slate-300 mt-1 leading-relaxed">
-                  Composite anomaly rating is <span className="text-amber-400 font-semibold">{score}/100</span>. Please re-enter your security PIN on the device to authorize immediate completion under user liability.
+                  Composite risk rating is <span className="text-amber-400 font-semibold">{score}/100</span>. Complete the additional prototype verification on the device before continuing.
                 </p>
 
                 <div className="mt-3 flex items-center gap-2">
                   <div className="flex items-center gap-1 text-[11px] font-mono text-amber-300 bg-amber-950/40 px-2 py-1 rounded border border-amber-500/30">
                     <CheckCircle2 className="w-3 h-3 text-amber-400" />
-                    <span>Irreversible User Override Active</span>
+                    <span>Step-up verification required</span>
                   </div>
                   {onDismissMediumModal && (
                     <button
@@ -108,7 +108,7 @@ export const RiskPopups: React.FC<RiskPopupsProps> = ({
 
               <div className="flex items-center gap-2 mb-2">
                 <span className="px-3 py-1 text-xs font-mono font-bold uppercase rounded-full bg-red-950/80 text-red-300 border border-red-500/50">
-                  MANDATORY DUAL-PIN CHALLENGE
+                  HIGH RISK INTERCEPTION
                 </span>
                 <span className="px-3 py-1 text-xs font-mono font-bold rounded-full bg-red-500 text-slate-950">
                   SCORE: {score}/100
@@ -116,11 +116,11 @@ export const RiskPopups: React.FC<RiskPopupsProps> = ({
               </div>
 
               <h3 className="text-2xl font-black text-white tracking-tight sm:text-3xl mb-3">
-                High Risk Warning Acknowledged
+                SentinelAI recommends stopping this payment
               </h3>
 
               <p className="text-sm text-red-200/90 max-w-lg mb-6 leading-relaxed">
-                SentinelAI detected critical anomaly signals for <span className="font-bold text-white font-mono">₹{transaction.amount.toLocaleString('en-IN')}</span> to <span className="font-bold text-white">{transaction.receiver_name}</span>. Entering your secondary PIN authorizes immediate, irreversible dispatch under user liability.
+                SentinelAI intercepted <span className="font-bold text-white font-mono">₹{transaction.amount.toLocaleString('en-IN')}</span> to <span className="font-bold text-white">{transaction.receiver_name || transaction.receiver_id}</span> based on the risk signals below. The prototype has not sent the payment. Review why, report the receiver, or cancel; if you recognise it, explicit acknowledgement and step-up verification are required to continue.
               </p>
 
               {/* Threat Signals */}
@@ -128,7 +128,7 @@ export const RiskPopups: React.FC<RiskPopupsProps> = ({
                 <div className="flex items-center justify-between text-xs font-mono text-red-400 font-semibold mb-2">
                   <span className="flex items-center gap-1.5">
                     <AlertOctagon className="w-3.5 h-3.5 text-red-500" />
-                    TRIGGERED THREAT SIGNALS:
+                    RISK SIGNALS:
                   </span>
                   <span>POLICY: {assessment.policy_applied}</span>
                 </div>
@@ -137,7 +137,7 @@ export const RiskPopups: React.FC<RiskPopupsProps> = ({
                   {assessment.reason_codes.map((code, idx) => (
                     <div key={idx} className="flex items-center justify-between text-xs py-1 px-2.5 rounded bg-red-950/40 border border-red-800/40 text-red-200">
                       <span className="font-mono font-bold">{code}</span>
-                      <span className="text-[11px] text-red-400">CRITICAL MATCH</span>
+                      <span className="text-[11px] text-red-400">DETECTED</span>
                     </div>
                   ))}
                 </div>
@@ -150,7 +150,7 @@ export const RiskPopups: React.FC<RiskPopupsProps> = ({
                     onClick={onDismissHighModal}
                     className="w-full py-3 px-5 rounded-xl bg-gradient-to-r from-red-600 to-rose-700 hover:from-red-500 hover:to-rose-600 text-white font-bold text-sm shadow-[0_0_25px_rgba(239,68,68,0.5)] transition flex items-center justify-center gap-2"
                   >
-                    <span>Proceed to Secondary PIN Entry on Device</span>
+                    <span>Review risk and available actions</span>
                     <ArrowRight className="w-4 h-4" />
                   </button>
                 )}

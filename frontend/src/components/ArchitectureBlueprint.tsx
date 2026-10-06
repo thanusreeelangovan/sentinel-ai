@@ -70,7 +70,7 @@ export const ArchitectureBlueprint: React.FC = () => {
                 <span className="font-mono text-[11px] text-[#14B8A6]">Frontend &amp; Visualization</span>
               </div>
               <p className="text-[#374151]">
-                UPI mobile simulator, dashboard telemetry deck, SHAP attribution, real-time risk alert popups.
+                Payment simulator, technical detail views, model explanation and contextual risk alerts.
               </p>
             </div>
           </div>

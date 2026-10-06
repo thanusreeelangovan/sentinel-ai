@@ -33,7 +33,7 @@ services:
     build:
       context: ./frontend
       args:
-        VITE_API_URL: ${VITE_API_URL:-http://localhost:8000}
+        VITE_API_URL: ${VITE_API_URL:?Set VITE_API_URL to the browser-reachable FastAPI base URL}
     ports:
       - "${FRONTEND_PORT:-3000}:3000"
     depends_on:

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { ShieldAlert, CheckCircle2, XCircle, Loader2, Flag } from 'lucide-react';
+import { DEFAULT_REPORTS_URL } from '../services/apiClient';
 
 export interface ReportTransactionContext {
   transaction_id?: string;
@@ -34,41 +35,22 @@ type SubmissionState = 'idle' | 'confirming' | 'loading' | 'success' | 'error';
 async function submitReceiverReport(
   payload: Record<string, unknown>,
   currentUserId: string,
-  apiBaseUrl?: string,
+  reportsUrl: string,
 ): Promise<{ status: number; data: Record<string, unknown> }> {
-  const normalizedBase = apiBaseUrl ? apiBaseUrl.replace(/\/+$/, '') : '';
-  const urls = [
-    ...(normalizedBase ? [`${normalizedBase}/reports`] : []),
-    '/reports',
-    'http://127.0.0.1:8000/reports',
-    'http://localhost:8000/reports',
-  ];
-  let lastStatus = 0;
-  let lastData: Record<string, unknown> = {};
-
-  for (const url of urls) {
-    try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-          'X-Authenticated-User-Id': currentUserId,
-        },
-        body: JSON.stringify(payload),
-      });
-      const data = (await response.json().catch(() => ({}))) as Record<string, unknown>;
-      lastStatus = response.status;
-      lastData = data;
-      if (response.status !== 404) {
-        return { status: response.status, data };
-      }
-    } catch {
-      continue;
-    }
+  if (!reportsUrl) {
+    throw new Error('Receiver reporting is unavailable because VITE_API_URL is not configured for this build.');
   }
-
-  return { status: lastStatus || 0, data: lastData };
+  const response = await fetch(reportsUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+      'X-Authenticated-User-Id': currentUserId,
+    },
+    body: JSON.stringify(payload),
+  });
+  const data = (await response.json()) as Record<string, unknown>;
+  return { status: response.status, data };
 }
 
 function reportStorageKey(userId: string): string {
@@ -99,7 +81,7 @@ export const ReportReceiverButton: React.FC<ReportReceiverButtonProps> = ({
   receiverName,
   riskAssessment,
   transactionContext,
-  apiBaseUrl = 'http://localhost:8000',
+  apiBaseUrl = DEFAULT_REPORTS_URL,
   onReportSubmitted,
   className = '',
 }) => {
@@ -164,6 +146,9 @@ export const ReportReceiverButton: React.FC<ReportReceiverButtonProps> = ({
 
       if (status === 201 || status === 200) {
         const id = String(data.report_id || '');
+        if (!id) {
+          throw new Error('Reporting API response did not include a report reference.');
+        }
         setReportId(id);
         setState('success');
         if (id) {
@@ -171,10 +156,15 @@ export const ReportReceiverButton: React.FC<ReportReceiverButtonProps> = ({
         }
         onReportSubmitted?.(id);
       } else if (status === 409) {
-        const storedId = String(data.report_id || window.localStorage.getItem(reportStorageKey(senderId || currentUserId)) || 'ALREADY-FILED');
-        window.localStorage.setItem(reportStorageKey(senderId || currentUserId), storedId);
-        setReportId(storedId);
-        setState('success');
+        const storedId = String(data.report_id || window.localStorage.getItem(reportStorageKey(senderId || currentUserId)) || '');
+        if (storedId) {
+          window.localStorage.setItem(reportStorageKey(senderId || currentUserId), storedId);
+          setReportId(storedId);
+          setState('success');
+        } else {
+          setErrorMessage(formatApiDetail(data.detail, 'A report already exists, but its reference could not be loaded.'));
+          setState('error');
+        }
       } else if (status === 401 || status === 403) {
         setErrorMessage(formatApiDetail(data.detail, 'Unauthorized: Only the authentic transaction sender can file this report.'));
         setState('error');
@@ -208,7 +198,7 @@ export const ReportReceiverButton: React.FC<ReportReceiverButtonProps> = ({
           className="w-full flex items-center justify-center gap-2 px-3.5 py-2.5 rounded-xl text-xs font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 transition-all shadow-sm"
         >
           <Flag className="w-3.5 h-3.5 text-rose-600" />
-          <span>Report Suspicious Receiver (Fraud Alert)</span>
+          <span>Report Receiver</span>
         </button>
       )}
 
@@ -233,7 +223,7 @@ export const ReportReceiverButton: React.FC<ReportReceiverButtonProps> = ({
                 You are about to report: <span className="font-mono">{receiverName || receiverId}</span>
               </p>
               <p className="leading-relaxed">
-                Filing this report will escalate this VPA to the NPCI Fraud Registry and permanently flag it across the SentinelAI Zero-Trust Network.
+                This report records the receiver and supporting transaction risk evidence in the SentinelAI prototype for fraud review.
               </p>
             </div>
 

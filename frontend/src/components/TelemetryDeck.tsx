@@ -19,12 +19,12 @@ import {
 import { 
   RiskAssessment, 
   SharedTransaction, 
-  SHAPFeature, 
+  RiskExplanationFeature,
   LatencyStep, 
   AuditLogEntry 
 } from '../types/sentinel';
 import { 
-  generateSHAPFeatures, 
+  generateRiskExplanationFeatures,
   getLatencyBreakdown, 
   generateAuditLogs 
 } from '../services/riskEngine';
@@ -76,12 +76,12 @@ export const TelemetryDeck: React.FC<TelemetryDeckProps> = ({
         </div>
         
         <h3 className="text-lg font-bold mb-2 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
-          <span>SentinelAI Neural Telemetry Deck Ready</span>
+          <span>SentinelAI Technical Details Ready</span>
           <Sparkles className="w-4 h-4" style={{ color: 'var(--primary)' }} />
         </h3>
         
         <p className="text-xs max-w-md leading-relaxed mb-6" style={{ color: 'var(--text-secondary)' }}>
-          Initiate or execute a UPI transaction on the mobile simulator to trigger live multi-model inference, SHAP attribution, and sub-millisecond telemetry.
+          Evaluate a transaction in the phone simulator to inspect the selected evaluation source, weighted risk components, and any available Isolation Forest model explanation.
         </p>
 
         {/* Live Backend Connection Indicator */}
@@ -102,7 +102,7 @@ export const TelemetryDeck: React.FC<TelemetryDeckProps> = ({
                 isRealBackend ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
               }`}
             >
-              {isRealBackend ? '● Live Backend Connected' : '○ Standby / Auto-Fallback'}
+              {isRealBackend ? '● FASTAPI BACKEND' : '○ LOCAL DEMO ENGINE'}
             </span>
           </div>
           <div className="text-[11px] truncate font-mono" style={{ color: 'var(--text-muted)' }}>
@@ -113,9 +113,8 @@ export const TelemetryDeck: React.FC<TelemetryDeckProps> = ({
     );
   }
 
-  // Generate dynamic SHAP features from actual transaction properties
-  const shapFeatures: SHAPFeature[] = generateSHAPFeatures(assessment, transaction);
-  const latencySteps: LatencyStep[] = getLatencyBreakdown(assessment.latency_ms);
+  const explanationFeatures: RiskExplanationFeature[] = generateRiskExplanationFeatures(assessment, transaction);
+  const latencySteps: LatencyStep[] = getLatencyBreakdown(assessment.latency_ms, assessment.evaluation_source);
   const auditLogs: AuditLogEntry[] = generateAuditLogs(assessment, transaction);
 
   const isHigh = assessment.composite_score > 75;
@@ -145,7 +144,10 @@ export const TelemetryDeck: React.FC<TelemetryDeckProps> = ({
     explanation: assessment.explanation,
     model_version: assessment.model_version,
     evaluated_at: assessment.evaluated_at,
-    latency_ms: assessment.latency_ms
+    latency_ms: assessment.latency_ms,
+    evaluation_source: assessment.evaluation_source,
+    model_explanation_method: assessment.model_explanation_method,
+    model_feature_contributions: assessment.model_feature_contributions,
   };
 
   const apiRequestBody = {
@@ -165,45 +167,12 @@ export const TelemetryDeck: React.FC<TelemetryDeckProps> = ({
     note: transaction.note
   };
 
-  const fastApiRouteCode = `@router.post("/transactions/evaluate", response_model=EvaluationResponse)
-async def evaluate_transaction(
-    payload: SharedTransactionPayload,
-    db: Session = Depends(get_db)
-):
-    # 1. Real Feature Extraction (ML Model: Devika)
-    features = await extract_features(payload)
-    anomaly_score = ml_model.predict_anomaly(features) # Normalized (0-100)
-    
-    # 2. Rule & Velocity Signals (Krrish)
-    velocity_score, receiver_score, behavioral_score, rules = rule_engine.evaluate(payload)
-    
-    # 3. Normalized Fusion Formula (Section 8.1)
-    composite_score = (
-        (anomaly_score * 0.40) +
-        (velocity_score * 0.25) +
-        (receiver_score * 0.20) +
-        (behavioral_score * 0.15)
-    )
-    
-    # 4. Strict Decision Thresholds (Section 11)
-    decision = "APPROVE" if composite_score <= 40 else ("VERIFY" if composite_score <= 75 else "BLOCK")
-    
-    # 5. PostgreSQL Immutable Audit Logging (Thanusree)
-    audit_log = record_audit(db, payload, composite_score, decision)
-    
-    return EvaluationResponse(
-        transaction_id=payload.transaction_id,
-        composite_score=round(composite_score, 1),
-        decision=decision,
-        risk_breakdown={
-            "anomaly": anomaly_score,
-            "velocity": velocity_score,
-            "receiver": receiver_score,
-            "behavioral": behavioral_score
-        },
-        reason_codes=rules.triggered_codes,
-        evaluated_at=datetime.utcnow().isoformat()
-    )`;
+  const fastApiRouteCode = `@router.post("/transactions/evaluate", response_model=EvaluateResponse)
+def post_evaluate_transaction(
+    transaction: Transaction,
+    db: Session = Depends(get_db),
+) -> EvaluateResponse:
+    return evaluate_transaction(transaction, db)`;
 
   return (
     <div 
@@ -226,7 +195,7 @@ async def evaluate_transaction(
           <div className="flex items-center gap-2.5">
             <div className="w-3 h-3 rounded-full animate-pulse" style={{ backgroundColor: 'var(--primary)' }}></div>
             <span className="text-xs font-mono font-bold tracking-wider uppercase" style={{ color: 'var(--text-primary)' }}>
-              SENTINEL NEURAL TELEMETRY DECK
+              SENTINELAI TECHNICAL DETAILS
             </span>
           </div>
 
@@ -241,7 +210,7 @@ async def evaluate_transaction(
               }}
             >
               <Globe className="w-3 h-3" style={{ color: isRealBackend ? '#10B981' : 'var(--primary)' }} />
-              <span>{isRealBackend ? 'Live FastAPI Backend (200 OK)' : 'Deterministic ML Engine'}</span>
+              <span>{isRealBackend ? 'FASTAPI BACKEND' : 'LOCAL DEMO ENGINE'}</span>
             </div>
 
             {onRefreshBackendCheck && (
@@ -355,11 +324,11 @@ async def evaluate_transaction(
         }}
       >
         {[
-          { id: 'shap', label: 'SHAP Feature Attribution', icon: Activity },
-          { id: 'biometrics', label: 'Behavioral Biometrics', icon: Fingerprint },
-          { id: 'latency', label: 'Sub-ms Latency Breakdown', icon: Clock },
+          { id: 'shap', label: assessment.evaluation_source === 'FASTAPI BACKEND' ? 'Anomaly Model Explanation' : 'Local Demo Explanation', icon: Activity },
+          { id: 'biometrics', label: 'Prototype Context Signals', icon: Fingerprint },
+          { id: 'latency', label: 'Evaluation Timing', icon: Clock },
           { id: 'api', label: 'FastAPI REST Contract', icon: Code2 },
-          { id: 'audit', label: 'Audit Log Journal', icon: ScrollText },
+          { id: 'audit', label: 'Prototype Activity', icon: ScrollText },
         ].map(tab => (
           <button
             key={tab.id}
@@ -378,17 +347,21 @@ async def evaluate_transaction(
         ))}
       </div>
 
-      {/* TAB 1: SHAP ATTRIBUTION */}
+      {/* TAB 1: MODEL EXPLANATION */}
       {activeTab === 'shap' && (
         <div className="p-5 flex-1 overflow-y-auto space-y-4 bg-[var(--bg-surface)]">
           <div className="flex items-center justify-between">
             <div>
               <h4 className="text-sm font-bold flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
                 <TrendingUp className="w-4 h-4" style={{ color: 'var(--primary)' }} />
-                REAL SHAP FEATURE ATTRIBUTION &amp; FACTOR WEIGHTS
+                {assessment.evaluation_source === 'FASTAPI BACKEND'
+                  ? `ISOLATION FOREST · ${assessment.model_explanation_method}`
+                  : 'LOCAL DEMO · HEURISTIC EXPLANATION'}
               </h4>
               <p className="text-xs mt-0.5" style={{ color: 'var(--text-secondary)' }}>
-                Mathematically extracted contribution of transaction attributes to composite risk
+                {assessment.evaluation_source === 'FASTAPI BACKEND'
+                  ? 'Contributions explain only the anomaly model (40% of composite risk); rule-based components are shown separately.'
+                  : 'This deterministic local explanation is not backend model output or SHAP.'}
               </p>
             </div>
             <div className="text-right text-xs font-mono">
@@ -403,7 +376,7 @@ async def evaluate_transaction(
           </div>
 
           <div className="space-y-3">
-            {shapFeatures.map((feat, idx) => (
+            {explanationFeatures.map((feat, idx) => (
               <div 
                 key={idx} 
                 className="p-3.5 rounded-2xl border text-xs shadow-sm"
@@ -417,12 +390,14 @@ async def evaluate_transaction(
                     <span 
                       className="px-2 py-0.5 rounded text-[10px] font-mono font-bold border"
                       style={{
-                        backgroundColor: feat.impact_score > 0 ? 'rgb(254, 242, 242)' : 'var(--bg-surface)',
-                        borderColor: feat.impact_score > 0 ? 'rgb(252, 165, 165)' : 'var(--border-default)',
-                        color: feat.impact_score > 0 ? '#DC2626' : 'var(--primary)'
+                        backgroundColor: 'var(--bg-surface)',
+                        borderColor: 'var(--border-default)',
+                        color: 'var(--primary)'
                       }}
                     >
-                      {feat.impact_score > 0 ? `+${feat.impact_score}` : feat.impact_score} pts
+                      {feat.model_contribution !== undefined
+                        ? `${feat.model_contribution > 0 ? '+' : ''}${feat.model_contribution.toFixed(6)}`
+                        : `${feat.risk_score}/100`}
                     </span>
                     <span className="font-bold" style={{ color: 'var(--text-primary)' }}>{feat.name}</span>
                     <span 
@@ -436,7 +411,9 @@ async def evaluate_transaction(
                     </span>
                   </div>
                   <span className="font-mono text-[11px]" style={{ color: 'var(--text-secondary)' }}>
-                    Weight: <span className="font-bold" style={{ color: 'var(--text-primary)' }}>{feat.weight_percentage}%</span>
+                    {feat.model_contribution !== undefined
+                      ? 'Model contribution'
+                      : <>Component weight: <span className="font-bold" style={{ color: 'var(--text-primary)' }}>{feat.weight_percentage}%</span></>}
                   </span>
                 </div>
 
@@ -445,12 +422,9 @@ async def evaluate_transaction(
                 </p>
 
                 <div className="flex items-center justify-between text-[10px] font-mono pt-2 border-t" style={{ borderColor: 'var(--border-default)' }}>
-                  <span style={{ color: 'var(--text-secondary)' }}>Raw Input Value: <span className="font-bold" style={{ color: 'var(--text-primary)' }}>{feat.raw_value}</span></span>
-                  <span 
-                    className="font-bold"
-                    style={{ color: feat.is_positive_risk ? '#DC2626' : 'var(--primary)' }}
-                  >
-                    {feat.is_positive_risk ? '↑ Increases Risk' : '↓ Decreases Risk (Safe Signal)'}
+                  <span style={{ color: 'var(--text-secondary)' }}>Feature / score value: <span className="font-bold" style={{ color: 'var(--text-primary)' }}>{feat.raw_value}</span></span>
+                  <span className="font-bold" style={{ color: 'var(--text-secondary)' }}>
+                    {feat.model_contribution !== undefined ? 'Isolation Forest only' : 'Local heuristic signal'}
                   </span>
                 </div>
               </div>
@@ -466,10 +440,10 @@ async def evaluate_transaction(
             <div>
               <h4 className="text-sm font-bold flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
                 <Fingerprint className="w-4 h-4" style={{ color: 'var(--primary)' }} />
-                BEHAVIORAL BIOMETRICS &amp; DEVICE INTEGRITY
+                AVAILABLE CONTEXT · NO BIOMETRIC MEASUREMENT
               </h4>
               <p className="text-xs mt-0.5" style={{ color: 'var(--text-secondary)' }}>
-                Live keystroke dynamics, sensor tilt, and hardware attestations
+                The prototype does not collect keystrokes, gyroscope data, or hardware attestations. Behavioral risk is rule-based.
               </p>
             </div>
             <span 
@@ -480,7 +454,7 @@ async def evaluate_transaction(
                 color: 'var(--primary)'
               }}
             >
-              {assessment.signals.human_probability}% Human Probability
+              Behavioral risk: {assessment.risk_breakdown.behavioral}/100
             </span>
           </div>
 
@@ -493,24 +467,20 @@ async def evaluate_transaction(
               }}
             >
               <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-mono uppercase font-bold" style={{ color: 'var(--text-secondary)' }}>KEYSTROKE ENTROPY</span>
-                <span className="text-lg font-bold font-mono" style={{ color: 'var(--primary)' }}>
-                  {assessment.signals.typing_entropy}%
-                </span>
+                <span className="text-xs font-mono uppercase font-bold" style={{ color: 'var(--text-secondary)' }}>KEYSTROKE BIOMETRICS</span>
+                <span className="text-sm font-bold font-mono" style={{ color: 'var(--text-secondary)' }}>Not collected</span>
               </div>
               <div className="w-full h-2 rounded-full mb-3 overflow-hidden" style={{ backgroundColor: 'var(--border-default)' }}>
                 <div 
                   className="h-full transition-all"
                   style={{ 
-                    width: `${assessment.signals.typing_entropy}%`,
-                    backgroundColor: assessment.signals.typing_entropy < 30 ? '#DC2626' : 'var(--primary)'
+                    width: '0%',
+                    backgroundColor: 'var(--primary)'
                   }}
                 ></div>
               </div>
               <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-                {assessment.signals.typing_entropy > 50 
-                  ? 'Natural stochastic variance in key-press intervals conforming to organic human motor patterns.'
-                  : 'Fixed millisecond interval keystrokes indicative of scripted automated bot submission.'}
+                No keystroke timing is captured or used by the risk engine.
               </p>
             </div>
 
@@ -522,24 +492,20 @@ async def evaluate_transaction(
               }}
             >
               <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-mono uppercase font-bold" style={{ color: 'var(--text-secondary)' }}>GYRO TILT ANGLE</span>
-                <span className="text-lg font-bold font-mono" style={{ color: 'var(--primary)' }}>
-                  {assessment.signals.gyro_tilt}°
-                </span>
+                <span className="text-xs font-mono uppercase font-bold" style={{ color: 'var(--text-secondary)' }}>GYROSCOPE DATA</span>
+                <span className="text-sm font-bold font-mono" style={{ color: 'var(--text-secondary)' }}>Not collected</span>
               </div>
               <div className="w-full h-2 rounded-full mb-3 overflow-hidden" style={{ backgroundColor: 'var(--border-default)' }}>
                 <div 
                   className="h-full transition-all"
                   style={{ 
-                    width: `${Math.min(100, assessment.signals.gyro_tilt * 2)}%`,
-                    backgroundColor: assessment.signals.gyro_tilt < 5 ? '#DC2626' : 'var(--primary)'
+                    width: '0%',
+                    backgroundColor: 'var(--primary)'
                   }}
                 ></div>
               </div>
               <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-                {assessment.signals.gyro_tilt > 20 
-                  ? 'Natural handheld posture (35°-50° grip angle).'
-                  : 'Flat 0.0° angle with zero physical micro-vibrations (desktop emulator / VM).'}
+                No sensor tilt or motion data is measured in this prototype.
               </p>
             </div>
 
@@ -551,20 +517,20 @@ async def evaluate_transaction(
               }}
             >
               <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-mono uppercase font-bold" style={{ color: 'var(--text-secondary)' }}>DEVICE INTEGRITY</span>
+                <span className="text-xs font-mono uppercase font-bold" style={{ color: 'var(--text-secondary)' }}>SUBMITTED DEVICE TYPE</span>
                 <span 
                   className="text-xs font-bold font-mono px-2 py-0.5 rounded border"
                   style={{
-                    backgroundColor: transaction.device_type === 'android_emulator' ? 'rgb(254, 242, 242)' : 'var(--bg-surface)',
-                    borderColor: transaction.device_type === 'android_emulator' ? 'rgb(252, 165, 165)' : 'var(--border-default)',
-                    color: transaction.device_type === 'android_emulator' ? '#DC2626' : 'var(--primary)'
+                    backgroundColor: 'var(--bg-surface)',
+                    borderColor: 'var(--border-default)',
+                    color: 'var(--text-primary)'
                   }}
                 >
-                  {transaction.device_type === 'android_emulator' ? 'Rooted Emulator' : 'Hardware Trusted'}
+                  {transaction.device_type}
                 </span>
               </div>
               <p className="text-xs mt-2" style={{ color: 'var(--text-secondary)' }}>
-                Hardware ID: <span className="font-mono font-bold" style={{ color: 'var(--text-primary)' }}>{transaction.device_id}</span>
+                Device ID field: <span className="font-mono font-bold" style={{ color: 'var(--text-primary)' }}>{transaction.device_id}</span>. This value is supplied context, not hardware attestation.
               </p>
             </div>
 
@@ -576,16 +542,16 @@ async def evaluate_transaction(
               }}
             >
               <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-mono uppercase font-bold" style={{ color: 'var(--text-secondary)' }}>HARDWARE TRUST SCORE</span>
+                <span className="text-xs font-mono uppercase font-bold" style={{ color: 'var(--text-secondary)' }}>BEHAVIORAL RULE SCORE</span>
                 <span 
                   className="text-lg font-bold font-mono"
-                  style={{ color: assessment.signals.hardware_trust_score < 40 ? '#DC2626' : 'var(--primary)' }}
+                  style={{ color: assessment.risk_breakdown.behavioral > 40 ? '#DC2626' : 'var(--primary)' }}
                 >
-                  {assessment.signals.hardware_trust_score}/100
+                  {assessment.risk_breakdown.behavioral}/100
                 </span>
               </div>
               <p className="text-xs mt-2" style={{ color: 'var(--text-secondary)' }}>
-                {assessment.signals.device_trust}
+                Rule-based behavioral component; the UI does not perform biometric authentication or device attestation.
               </p>
             </div>
           </div>
@@ -599,10 +565,10 @@ async def evaluate_transaction(
             <div>
               <h4 className="text-sm font-bold flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
                 <Clock className="w-4 h-4" style={{ color: 'var(--primary)' }} />
-                SUB-MILLISECOND PIPELINE LATENCY BREAKDOWN
+                MEASURED EVALUATION TIMING
               </h4>
               <p className="text-xs mt-0.5" style={{ color: 'var(--text-secondary)' }}>
-                Measured stage-by-stage timing profile vs NPCI 200ms UPI SLA
+                One measured evaluation duration only; stage timings and external service-level claims are not available.
               </p>
             </div>
             <div className="flex items-center gap-3 text-xs font-mono">
@@ -611,9 +577,9 @@ async def evaluate_transaction(
                 <span className="font-bold text-sm" style={{ color: 'var(--primary)' }}>{assessment.latency_ms}ms</span>
               </div>
               <div className="text-right">
-                <span className="block text-[10px]" style={{ color: 'var(--text-secondary)' }}>SLA BUDGET USED</span>
+                <span className="block text-[10px]" style={{ color: 'var(--text-secondary)' }}>SOURCE</span>
                 <span className="font-bold text-sm" style={{ color: 'var(--primary)' }}>
-                  {Math.round((assessment.latency_ms / 200) * 100)}%
+                  {assessment.evaluation_source}
                 </span>
               </div>
             </div>
@@ -635,7 +601,7 @@ async def evaluate_transaction(
                   </span>
                   <div className="flex items-center gap-2">
                     <span className="font-bold" style={{ color: 'var(--primary)' }}>{step.latency_ms}ms</span>
-                    <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>(&lt;{step.sla_target_ms}ms target)</span>
+                    <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>(measured)</span>
                   </div>
                 </div>
 
@@ -643,7 +609,7 @@ async def evaluate_transaction(
                   <div 
                     className="h-full"
                     style={{ 
-                      width: `${(step.latency_ms / step.sla_target_ms) * 100}%`,
+                      width: '100%',
                       backgroundColor: 'var(--primary)'
                     }}
                   ></div>
@@ -665,7 +631,7 @@ async def evaluate_transaction(
           >
             <span className="font-bold flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
               <CheckCircle2 className="w-4 h-4" style={{ color: 'var(--primary)' }} />
-              Ultra-Low Latency Execution ({assessment.latency_ms}ms)
+              Evaluation duration ({assessment.latency_ms}ms)
             </span>
             <span 
               className="px-2.5 py-0.5 rounded font-bold border"
@@ -675,7 +641,7 @@ async def evaluate_transaction(
                 color: 'var(--primary)'
               }}
             >
-              PASSED 200MS SLA
+              {assessment.evaluation_source}
             </span>
           </div>
         </div>
@@ -688,10 +654,10 @@ async def evaluate_transaction(
             <div>
               <h4 className="text-sm font-bold flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
                 <Code2 className="w-4 h-4" style={{ color: 'var(--primary)' }} />
-                FASTAPI REST SERVICE CONTRACT &amp; LIVE DATA DUMP
+                FASTAPI EVALUATION CONTRACT &amp; RESULT DATA
               </h4>
               <p className="text-xs mt-0.5" style={{ color: 'var(--text-secondary)' }}>
-                Actual JSON payload transmitted and received for Transaction ID: {transaction.transaction_id}
+                Evaluation source: {assessment.evaluation_source} · Transaction ID: {transaction.transaction_id}
               </p>
             </div>
 
@@ -781,7 +747,7 @@ async def evaluate_transaction(
                 REAL-TIME AUDIT TRAIL &amp; TELEMETRY JOURNAL
               </h4>
               <p className="text-xs mt-0.5" style={{ color: 'var(--text-secondary)' }}>
-                Cryptographically timestamped transaction log for {transaction.transaction_id}
+                Client-side illustrative activity for {transaction.transaction_id}; it is not a cryptographically signed audit stream.
               </p>
             </div>
 
