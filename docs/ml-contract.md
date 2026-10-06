@@ -45,9 +45,13 @@ An anomaly score of at least 70 also adds the `HIGH_ANOMALY` reason code. The fi
 
 ## Feature Contributions
 
-For explainability, the service computes model-based feature contributions by replacing one feature at a time with its training mean and measuring the change in Isolation Forest output. The eight largest absolute contributions can be passed to the explanation layer.
+For explainability, the Isolation Forest service uses SHAP TreeExplainer to calculate per-feature contributions for the fitted anomaly model. The eight largest absolute contributions are exposed with the evaluation response and can be shown in the consumer explanation view.
 
-These values are ablation-based model contributions. They should not be described as SHAP values or as causal explanations.
+SHAP explains the Isolation Forest anomaly model only. It does not explain the rule-based velocity, receiver or behavioral scores and therefore must not be presented as an explanation of the entire composite score.
+
+If Tree SHAP cannot run for the model in a deployed environment, the service falls back to the previous training-mean ablation method and explicitly reports `ABLATION_FALLBACK` rather than labelling those values as SHAP.
+
+These contributions are model explanations, not causal evidence that a feature caused fraud.
 
 ## Current Limitations
 

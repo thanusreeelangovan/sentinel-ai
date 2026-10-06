@@ -81,6 +81,11 @@ export async function evaluateTransactionWithBackend(
         model_version: realData.model_version || 'fastapi_production_v2.8',
         evaluated_at: realData.evaluated_at || new Date().toISOString(),
         latency_ms: realData.latency_ms || realLatency,
+        evaluation_source: 'FASTAPI_BACKEND',
+        model_explanation_method: realData.model_explanation_method || 'UNAVAILABLE',
+        model_explanation_features: Array.isArray(realData.model_explanation_features)
+          ? realData.model_explanation_features
+          : [],
         signals: realData.signals || {
           behavioral_cadence: realData.composite_score > 75 ? 'BOT_SUSPECTED' : 'ORGANIC_HUMAN',
           geo_hop_velocity: '0 km/h (Real GPS)',
@@ -100,7 +105,12 @@ export async function evaluateTransactionWithBackend(
   } catch (err: unknown) {
     const errorMsg = err instanceof Error ? err.message : 'Backend unreachable';
     // Fallback to deterministic local engine if backend isn't online
-    const localAssessment = calculateRiskAssessment(tx);
+    const localAssessment = {
+      ...calculateRiskAssessment(tx),
+      evaluation_source: 'LOCAL_DEMO_ENGINE' as const,
+      model_explanation_method: 'LOCAL_HEURISTIC' as const,
+      model_explanation_features: [],
+    };
     return { 
       assessment: localAssessment, 
       isRealBackend: false, 

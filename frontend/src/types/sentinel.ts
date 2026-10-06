@@ -42,6 +42,12 @@ export interface RiskBreakdown {
   behavioral: number;   // 0 - 100 (weight 15%)
 }
 
+export interface ModelExplanationFeature {
+  feature: string;
+  contribution: number;
+  value: number;
+}
+
 export interface RiskAssessment {
   transaction_id: string;
   composite_score: number;
@@ -54,6 +60,9 @@ export interface RiskAssessment {
   model_version: string;
   evaluated_at: string;
   latency_ms: number;
+  evaluation_source?: 'FASTAPI_BACKEND' | 'LOCAL_DEMO_ENGINE';
+  model_explanation_method?: 'SHAP_TREE_EXPLAINER' | 'ABLATION_FALLBACK' | 'LOCAL_HEURISTIC' | 'UNAVAILABLE';
+  model_explanation_features?: ModelExplanationFeature[];
   signals: {
     behavioral_cadence: string;
     geo_hop_velocity: string;
