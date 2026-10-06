@@ -923,7 +923,7 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
                   <div className="space-y-1.5 text-[10px]">
                     {(assessment.model_explanation_features?.length
                       ? assessment.model_explanation_features.map((item) => ({
-                          name: item.feature.replaceAll('_', ' '),
+                          name: item.feature.split('_').join(' '),
                           category: 'ANOMALY MODEL',
                           impact_score: Number(item.contribution.toFixed(3)),
                           description: 'Contribution to the Isolation Forest model output for this transaction.',
