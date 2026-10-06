@@ -123,12 +123,13 @@ def evaluate_transaction(transaction: Transaction, db: Session) -> EvaluateRespo
         transaction_id=transaction.transaction_id,
     )
     risk_level = _risk_level(risk.composite_score)
+    model_explanation = get_iforest_service().explain_features(transaction)
     explanation = generate_smartphone_explanation(
         risk_level=risk_level,
         reason_codes=reason_codes,
         risk_breakdown=risk.risk_breakdown,
         risk_score=risk.composite_score,
-        shap_features=get_iforest_service().feature_contributions(transaction),
+        shap_features=list(model_explanation["features"]),
     )
     response = EvaluateResponse(
         transaction_id=transaction.transaction_id,
@@ -145,6 +146,8 @@ def evaluate_transaction(transaction: Transaction, db: Session) -> EvaluateRespo
         signals=_build_signals(transaction, rules, risk.composite_score),
         risk_score=risk.composite_score,
         minimal_explanation=minimal.explanation,
+        model_explanation_method=str(model_explanation["method"]),
+        model_explanation_features=list(model_explanation["features"]),
     )
     persist_evaluation(db, transaction, rules, anomaly, response)
     db.commit()
