@@ -3,6 +3,7 @@ uvicorn
 pydantic
 numpy
 scikit-learn
+shap
 sqlalchemy>=2.0.0
 psycopg2-binary
 python-dotenv
