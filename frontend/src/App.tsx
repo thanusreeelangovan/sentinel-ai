@@ -1,147 +1,108 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Header } from './components/Header';
 import { PhoneSimulator } from './components/PhoneSimulator';
-import { RiskPopups } from './components/RiskPopups';
-import { FestiveCelebration } from './components/FestiveCelebration';
-import { SharedTransaction, RiskAssessment } from './types/sentinel';
+import { RiskInspector } from './components/RiskInspector';
 import { INITIAL_TRANSACTION } from './data/mockData';
-import { 
-  evaluateTransactionWithBackend, 
-  checkBackendHealth, 
-  DEFAULT_BACKEND_URL 
+import {
+  checkBackendHealth,
+  DEFAULT_BACKEND_URL,
+  evaluateTransactionWithBackend,
 } from './services/apiClient';
+import { RiskAssessment, SharedTransaction } from './types/sentinel';
 
 export const App: React.FC = () => {
   const [transaction, setTransaction] = useState<SharedTransaction>(INITIAL_TRANSACTION);
   const [assessment, setAssessment] = useState<RiskAssessment | null>(null);
-  const [isProcessing, setIsProcessing] = useState<boolean>(false);
-  const [pipelineStep, setPipelineStep] = useState<number>(0);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [pipelineStep, setPipelineStep] = useState(0);
+  const [isRealBackend, setIsRealBackend] = useState(false);
+  const [backendError, setBackendError] = useState<string | null>(null);
 
-  // Backend Integration State
-  const [backendEndpoint] = useState<string>(DEFAULT_BACKEND_URL);
-
-  // Popup & Celebration Modal States
-  const [showMediumModal, setShowMediumModal] = useState<boolean>(false);
-  const [showHighModal, setShowHighModal] = useState<boolean>(false);
-  const [showCelebration, setShowCelebration] = useState<boolean>(false);
-  const [isMuted, setIsMuted] = useState<boolean>(false);
-
-  // Check Backend Connectivity on Mount
-  const handleCheckBackendHealth = useCallback(async () => {
-    await checkBackendHealth(backendEndpoint);
-  }, [backendEndpoint]);
+  const refreshBackend = useCallback(async () => {
+    const status = await checkBackendHealth(DEFAULT_BACKEND_URL);
+    setIsRealBackend(status.isConnected);
+    setBackendError(status.error || null);
+  }, []);
 
   useEffect(() => {
-    handleCheckBackendHealth();
-  }, [handleCheckBackendHealth]);
+    refreshBackend();
+  }, [refreshBackend]);
 
-  // Frontend Interaction Event Logging
-  const handleLogEvent = (eventType: string, details: Record<string, unknown> | string) => {
-    const logString = typeof details === 'string' ? details : JSON.stringify(details);
-    console.log(`[SentinelAI Audit] [${new Date().toISOString()}] ${eventType}: ${logString}`);
+  const handleLogEvent = (
+    eventType: string,
+    details: Record<string, unknown> | string,
+  ) => {
+    const payload = typeof details === 'string' ? details : JSON.stringify(details);
+    console.log(`[SentinelAI Audit] [${new Date().toISOString()}] ${eventType}: ${payload}`);
   };
 
   const handleExecuteTransaction = async (txToExecute: SharedTransaction) => {
+    setAssessment(null);
     setIsProcessing(true);
     setPipelineStep(1);
-    setShowMediumModal(false);
-    setShowHighModal(false);
-    setShowCelebration(false);
-
-    handleLogEvent('PIPELINE_INITIATED', { 
-      amount: txToExecute.amount, 
-      receiver: txToExecute.receiver_id,
-      endpoint: backendEndpoint 
-    });
+    setBackendError(null);
 
     setTimeout(() => setPipelineStep(2), 100);
     setTimeout(() => setPipelineStep(3), 220);
     setTimeout(() => setPipelineStep(4), 360);
-    setTimeout(() => setPipelineStep(5), 500);
 
-    // Call Real FastAPI Backend (with automatic fallback to local deterministic ML engine)
-    const { assessment: result, isRealBackend: backendSuccess } = 
-      await evaluateTransactionWithBackend(txToExecute, backendEndpoint);
+    const result = await evaluateTransactionWithBackend(
+      txToExecute,
+      DEFAULT_BACKEND_URL,
+    );
 
-    setTimeout(() => {
-      setAssessment(result);
-      setIsProcessing(false);
+    setTransaction(txToExecute);
+    setAssessment(result.assessment);
+    setIsRealBackend(result.isRealBackend);
+    setBackendError(result.error || null);
+    setPipelineStep(5);
+    setIsProcessing(false);
 
-      handleLogEvent('RISK_EVALUATION_COMPLETED', { 
-        score: result.composite_score, 
-        decision: result.decision,
-        source: backendSuccess ? 'FASTAPI_BACKEND' : 'DETERMINISTIC_ENGINE'
-      });
-
-      if (result.composite_score <= 40) {
-        setShowCelebration(true);
-      } else if (result.composite_score <= 75) {
-        setShowMediumModal(true);
-      } else {
-        setShowHighModal(true);
-      }
-    }, 600);
+    handleLogEvent('RISK_EVALUATION_COMPLETED', {
+      transaction_id: txToExecute.transaction_id,
+      score: result.assessment.composite_score,
+      decision: result.assessment.decision,
+      source: result.isRealBackend ? 'FASTAPI_BACKEND' : 'LOCAL_DEMO_ENGINE',
+    });
   };
 
   const handleReset = () => {
     setAssessment(null);
-    setPipelineStep(0);
     setIsProcessing(false);
-    setShowMediumModal(false);
-    setShowHighModal(false);
-    setShowCelebration(false);
-    handleLogEvent('TRANSACTION_RESET', { action: 'RESET' });
+    setPipelineStep(0);
   };
 
   return (
-    <div 
-      className="min-h-screen flex flex-col transition-all duration-300"
-      style={{
-        backgroundColor: 'var(--bg-app)',
-        color: 'var(--text-primary)'
-      }}
+    <div
+      className="min-h-screen flex flex-col"
+      style={{ backgroundColor: 'var(--bg-app)', color: 'var(--text-primary)' }}
     >
-      {/* Top Header Bar */}
       <Header />
 
-      {/* Main Content Area: Phone Interface Container */}
-      <main className="flex-1 w-full max-w-4xl mx-auto p-4 lg:p-6 flex items-center justify-center">
-        <div className="flex justify-center w-full">
-          <PhoneSimulator
-            transaction={transaction}
-            setTransaction={setTransaction}
+      <main className="flex-1 w-full max-w-7xl mx-auto px-4 py-6 lg:px-6 lg:py-8">
+        <div className="flex flex-col lg:flex-row items-start justify-center gap-6 xl:gap-8">
+          <div className="w-full lg:w-auto flex justify-center">
+            <PhoneSimulator
+              transaction={transaction}
+              setTransaction={setTransaction}
+              assessment={assessment}
+              evaluationError={backendError}
+              onExecuteTransaction={handleExecuteTransaction}
+              onReset={handleReset}
+              isProcessing={isProcessing}
+              pipelineStep={pipelineStep}
+              onLogEvent={handleLogEvent}
+            />
+          </div>
+
+          <RiskInspector
             assessment={assessment}
-            onExecuteTransaction={handleExecuteTransaction}
-            onReset={handleReset}
-            isProcessing={isProcessing}
-            pipelineStep={pipelineStep}
-            onLogEvent={handleLogEvent}
+            transaction={transaction}
+            isRealBackend={isRealBackend}
+            backendError={backendError}
           />
         </div>
       </main>
-
-      {/* Dynamic Popups */}
-      <RiskPopups
-        assessment={assessment}
-        transaction={transaction}
-        showMediumModal={showMediumModal}
-        showHighModal={showHighModal}
-        onDismissMediumModal={() => setShowMediumModal(false)}
-        onDismissHighModal={() => setShowHighModal(false)}
-      />
-
-      {/* Festive Success Celebration */}
-      {showCelebration && (
-        <FestiveCelebration
-          amount={transaction.amount}
-          receiverName={transaction.receiver_name || transaction.receiver_id}
-          transactionId={transaction.transaction_id}
-          onDismiss={() => setShowCelebration(false)}
-          isMuted={isMuted}
-          onToggleMute={() => setIsMuted(prev => !prev)}
-        />
-      )}
-
     </div>
   );
 };
