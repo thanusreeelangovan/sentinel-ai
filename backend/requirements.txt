@@ -4,7 +4,6 @@ pydantic
 numpy
 scikit-learn
 shap>=0.45,<0.50
-shap
 sqlalchemy>=2.0.0
 psycopg2-binary
 python-dotenv

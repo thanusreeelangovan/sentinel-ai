@@ -24,8 +24,7 @@ import {
 import { Payee, SharedTransaction, RiskAssessment } from '../types/sentinel';
 import { PRESET_PAYEES } from '../data/mockData';
 import { generateRiskExplanationFeatures } from '../services/riskEngine';
-import { generateSHAPFeatures } from '../services/riskEngine';
-import { DEFAULT_BACKEND_URL } from '../services/apiClient';
+import { DEFAULT_REPORTS_URL } from '../services/apiClient';
 import { ReportReceiverButton } from './ReportReceiverButton';
 
 interface PhoneSimulatorProps {
@@ -64,7 +63,6 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
   const [highRiskOverrideVerified, setHighRiskOverrideVerified] = useState<boolean>(false);
   const [activeTooltip, setActiveTooltip] = useState<string | null>(null);
   const [selectedPayeeId, setSelectedPayeeId] = useState<string | null>(null);
-  const reportApiBaseUrl = DEFAULT_BACKEND_URL.replace('/transactions/evaluate', '');
 
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isShaking, setIsShaking] = useState<boolean>(false);
@@ -248,21 +246,14 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
         setErrorMessage(null);
 
         if (nextPin.length === 4) {
-        if (nextPin === '4092') {
-            onLogEvent?.('SECONDARY_PIN_VERIFIED', { success: true, timestamp: new Date().toISOString() });
-          setHighRiskOverrideVerified(assessment?.risk_level === 'HIGH');
-          deductBalance(transaction.amount);
-          setScreen('result');
-        } else {
-          setIsShaking(true);
-          setErrorMessage('Incorrect demonstration PIN. Please try again.');
           if (nextPin === '4092') {
             onLogEvent?.('SECONDARY_PIN_VERIFIED', { success: true, timestamp: new Date().toISOString() });
+            setHighRiskOverrideVerified(assessment?.risk_level === 'HIGH');
             deductBalance(transaction.amount);
             setScreen('result');
           } else {
             setIsShaking(true);
-            setErrorMessage('Invalid demo security PIN. Use 4092.');
+            setErrorMessage('Incorrect demonstration PIN. Please try again.');
             onLogEvent?.('SECONDARY_PIN_FAILED', { error: 'AUTH_FAILED' });
             setTimeout(() => {
               setIsShaking(false);
@@ -389,9 +380,9 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
           </div>
         </div>
 
-        {/* ========================================================= */}
+        {/* --------------------------------------------------------- */}
         {/* SCREEN 1: PAYEE DIRECTORY & CONTACTS SELECTION */}
-        {/* ========================================================= */}
+        {/* --------------------------------------------------------- */}
         {screen === 'payee_select' && (
           <div className="flex-1 flex flex-col justify-between p-5 overflow-y-auto bg-[var(--phone-bg)] animate-fadeIn">
             <div className="space-y-4">
@@ -491,9 +482,9 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
           </div>
         )}
 
-        {/* ========================================================= */}
+        {/* --------------------------------------------------------- */}
         {/* SCREEN 2: AMOUNT ENTRY & KEYPAD (PEPPERMONEY STYLE) */}
-        {/* ========================================================= */}
+        {/* --------------------------------------------------------- */}
         {screen === 'amount_entry' && (
           <div className="flex-1 flex flex-col justify-between p-5 bg-[var(--phone-bg)] animate-fadeIn">
             <div>
@@ -628,9 +619,9 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
           </div>
         )}
 
-        {/* ========================================================= */}
+        {/* --------------------------------------------------------- */}
         {/* SCREEN 3: STEP 1 - PRIMARY PIN */}
-        {/* ========================================================= */}
+        {/* --------------------------------------------------------- */}
         {screen === 'primary_pin' && (
           <div className="flex-1 flex flex-col justify-between p-6 bg-[var(--phone-bg)] animate-fadeIn">
             <div>
@@ -716,9 +707,9 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
           </div>
         )}
 
-        {/* ========================================================= */}
+        {/* --------------------------------------------------------- */}
         {/* SCREEN: PIPELINE EVALUATION (PRE-AUTH RADAR SCAN) */}
-        {/* ========================================================= */}
+        {/* --------------------------------------------------------- */}
         {screen === 'pipeline' && (
           <div className="flex-1 flex flex-col justify-center items-center p-6 text-center space-y-6 bg-[var(--phone-bg)] animate-fadeIn">
             <div className="relative">
@@ -767,9 +758,9 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
           </div>
         )}
 
-        {/* ========================================================= */}
+        {/* --------------------------------------------------------- */}
         {/* SCREEN: INTERSTITIAL SECURITY PROMPT (PEPPERMONEY DARK) */}
-        {/* ========================================================= */}
+        {/* --------------------------------------------------------- */}
         {screen === 'interstitial' && assessment && (
           <div className="flex-1 flex flex-col justify-between p-5 overflow-y-auto bg-[var(--phone-bg)] animate-fadeIn">
             <div className="space-y-3.5">
@@ -951,18 +942,6 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
 
                   <div className="space-y-1.5 text-[10px]">
                     {generateRiskExplanationFeatures(assessment, transaction).map((feat, idx) => (
-                    {(assessment.model_explanation_features?.length
-                      ? assessment.model_explanation_features.map((item) => ({
-                          name: item.feature.split('_').join(' '),
-                          category: 'ANOMALY MODEL',
-                          impact_score: Number(item.contribution.toFixed(3)),
-                          description: 'Contribution to the Isolation Forest model output for this transaction.',
-                          weight_percentage: 0,
-                          raw_value: String(item.value),
-                          is_positive_risk: item.contribution > 0,
-                        }))
-                      : generateSHAPFeatures(assessment, transaction)
-                    ).map((feat, idx) => (
                       <div 
                         key={idx} 
                         className="p-2 rounded-xl bg-[#121216] border border-white/5 space-y-1"
@@ -980,8 +959,7 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
                           <span className="font-semibold">
                             {feat.model_contribution !== undefined
                               ? 'model contribution'
-                              : `weight ${feat.weight_percentage}%`}
-                            {assessment.model_explanation_features?.length ? 'Model contribution' : `Heuristic weight: ${feat.weight_percentage}%`}
+                              : `Heuristic weight: ${feat.weight_percentage}%`}
                           </span>
                         </div>
                         <p className="text-[9px] leading-tight text-gray-400">{feat.description}</p>
@@ -1020,7 +998,7 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
                   user_context: transaction.user_context,
                   note: transaction.note,
                 }}
-                apiBaseUrl={reportApiBaseUrl}
+                apiBaseUrl={DEFAULT_REPORTS_URL}
                 onReportSubmitted={(repId) => onLogEvent?.('FRAUD_REPORT_SUBMITTED', { report_id: repId })}
               />
 
@@ -1047,7 +1025,6 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
                   className="flex-1 py-3 px-3 rounded-2xl text-white font-bold text-xs flex items-center justify-center gap-1.5 bg-rose-600 hover:bg-rose-500 shadow-md transition-all active:scale-[0.98]"
                 >
                   <span>{assessment.composite_score > 75 ? 'I Recognise This Payment' : 'Continue to verification'}</span>
-                  <span>{assessment.composite_score > 75 ? 'I Recognise This Payment' : 'Verify & Continue'}</span>
                   <ArrowRight className="w-3.5 h-3.5" />
                 </button>
               </div>
@@ -1064,9 +1041,9 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
           </div>
         )}
 
-        {/* ========================================================= */}
+        {/* --------------------------------------------------------- */}
         {/* SCREEN: STEP 2 - SECONDARY PIN */}
-        {/* ========================================================= */}
+        {/* --------------------------------------------------------- */}
         {screen === 'step2_pin' && assessment && (
           <div className="flex-1 flex flex-col justify-between p-6 bg-[var(--phone-bg)] animate-fadeIn">
             <div>
@@ -1096,9 +1073,6 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
                   {assessment.composite_score > 75 ? 'Verified acknowledgement required to override the stop recommendation' : 'Step-up authentication'}
                 </p>
                 <h4 className="text-sm font-bold text-white mt-0.5">{transaction.receiver_name || transaction.receiver_id}</h4>
-                  {assessment.composite_score > 75 ? 'High Risk User Override Verification' : 'Step-Up Verification'}
-                </p>
-                <h4 className="text-sm font-bold text-white mt-0.5">{transaction.receiver_name}</h4>
                 <div className="text-2xl font-black font-mono mt-0.5 text-rose-500">
                   ₹{transaction.amount.toLocaleString('en-IN')}
                 </div>
@@ -1172,9 +1146,9 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
           </div>
         )}
 
-        {/* ========================================================= */}
+        {/* --------------------------------------------------------- */}
         {/* SCREEN 4: FINAL RESULT / RECEIPT (PEPPERMONEY STYLE) */}
-        {/* ========================================================= */}
+        {/* --------------------------------------------------------- */}
         {screen === 'result' && assessment && (
           <div className="flex-1 flex flex-col justify-between p-5 overflow-y-auto bg-[var(--phone-bg)] animate-fadeIn">
             <div className="space-y-3.5">
@@ -1214,16 +1188,17 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
                   </span>
                 </div>
 
-                {highRiskOverrideVerified && assessment.risk_level === 'HIGH' && (
-                  <div className="inline-flex items-center gap-1 mt-2 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase bg-red-950 text-red-300 border border-red-800">
-                    <span>HIGH RISK RECOMMENDATION OVERRIDDEN AFTER DEMO PIN VERIFICATION</span>
-                {assessment.composite_score > 40 && (
+                {highRiskOverrideVerified && (
                   <div className={`inline-flex items-center gap-1 mt-2 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase ${
-                    assessment.composite_score > 75 
-                      ? 'bg-red-950 text-red-400 border border-red-800' 
+                    assessment.risk_level === 'HIGH'
+                      ? 'bg-red-950 text-red-400 border border-red-800'
                       : 'bg-amber-950 text-amber-400 border border-amber-800'
                   }`}>
-                    <span>{assessment.composite_score > 75 ? 'High-Risk Recommendation Overridden by Verified User' : 'Step-Up Verification Completed'}</span>
+                    <span>
+                      {assessment.risk_level === 'HIGH'
+                        ? 'HIGH RISK RECOMMENDATION OVERRIDDEN AFTER DEMO PIN VERIFICATION'
+                        : 'STEP-UP VERIFICATION COMPLETED'}
+                    </span>
                   </div>
                 )}
                 {highRiskOverrideVerified && assessment.risk_level === 'HIGH' && (
@@ -1308,10 +1283,6 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
                 <div className="flex items-center justify-between">
                   <span>Prototype status:</span>
                   <span className="font-bold text-emerald-400">Demo payment completed</span>
-                  <span>Evaluation:</span>
-                  <span className="font-bold text-rose-400">
-                    {assessment.evaluation_source === 'FASTAPI_BACKEND' ? 'FastAPI Backend' : 'Local Demo Engine'}
-                  </span>
                 </div>
               </div>
 
@@ -1331,9 +1302,9 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
           </div>
         )}
 
-        {/* ========================================================= */}
+        {/* --------------------------------------------------------- */}
         {/* SCREEN: FALLBACK STATE (NETWORK CIRCUIT BREAKER) */}
-        {/* ========================================================= */}
+        {/* --------------------------------------------------------- */}
         {screen === 'fallback' && (
           <div className="flex-1 flex flex-col justify-between p-6 bg-[var(--phone-bg)] text-center animate-fadeIn">
             <div className="my-auto">

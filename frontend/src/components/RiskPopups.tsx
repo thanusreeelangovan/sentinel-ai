@@ -110,7 +110,6 @@ export const RiskPopups: React.FC<RiskPopupsProps> = ({
               <div className="flex items-center gap-2 mb-2">
                 <span className="px-3 py-1 text-xs font-mono font-bold uppercase rounded-full bg-red-950/80 text-red-300 border border-red-500/50">
                   HIGH RISK INTERCEPTION
-                  HIGH-RISK USER OVERRIDE
                 </span>
                 <span className="px-3 py-1 text-xs font-mono font-bold rounded-full bg-red-500 text-slate-950">
                   SCORE: {score}/100
@@ -123,11 +122,6 @@ export const RiskPopups: React.FC<RiskPopupsProps> = ({
 
               <p className="text-sm text-red-200/90 max-w-lg mb-6 leading-relaxed">
                 SentinelAI intercepted <span className="font-bold text-white font-mono">₹{transaction.amount.toLocaleString('en-IN')}</span> to <span className="font-bold text-white">{transaction.receiver_name || transaction.receiver_id}</span> based on the risk signals below. The prototype has not sent the payment. Review why, report the receiver, or cancel; if you recognise it, explicit acknowledgement and step-up verification are required to continue.
-                High Risk Payment Intercepted
-              </h3>
-
-              <p className="text-sm text-red-200/90 max-w-lg mb-6 leading-relaxed">
-                SentinelAI recommends stopping this <span className="font-bold text-white font-mono">₹{transaction.amount.toLocaleString('en-IN')}</span> payment to <span className="font-bold text-white">{transaction.receiver_name}</span>. If you recognise the transaction, you may explicitly override the recommendation after step-up verification.
               </p>
 
               {/* Threat Signals */}

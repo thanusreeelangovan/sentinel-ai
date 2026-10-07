@@ -82,7 +82,6 @@ export const ReportReceiverButton: React.FC<ReportReceiverButtonProps> = ({
   riskAssessment,
   transactionContext,
   apiBaseUrl = DEFAULT_REPORTS_URL,
-  apiBaseUrl = '',
   onReportSubmitted,
   className = '',
 }) => {
