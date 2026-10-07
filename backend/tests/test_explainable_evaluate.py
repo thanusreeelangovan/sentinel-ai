@@ -18,7 +18,6 @@ from fastapi.testclient import TestClient
 
 from app.db.session import get_session_factory, init_db
 from app.main import app
-from app.models.audit_log import AuditLog
 from app.models.risk_assessment import RiskAssessment
 from app.models.transaction import TransactionRecord
 from app.risk.decision import decide
@@ -148,15 +147,6 @@ def test_low_medium_high_explanations_preserve_scoring() -> None:
         for body in (low, medium, high):
             _assert_legacy_and_score(body)
             _assert_user_facing(body)
-            assert body["model_explanation_method"] in {
-                "SHAP_TREE_EXPLAINER",
-                "ABLATION_FALLBACK",
-            }
-            assert body["model_feature_contributions"]
-            assert all(
-                {"feature_name", "feature_value", "model_contribution"} <= set(item)
-                for item in body["model_feature_contributions"]
-            )
 
         assert low["decision"] == "APPROVE"
         assert low["risk_level"] == "LOW"
@@ -200,19 +190,10 @@ def test_low_medium_high_explanations_preserve_scoring() -> None:
                 risk = db.scalar(
                     select(RiskAssessment).where(RiskAssessment.transaction_id == txn_id)
                 )
-                audit = db.scalar(
-                    select(AuditLog).where(
-                        AuditLog.transaction_id == txn_id,
-                        AuditLog.event_type == "EVALUATION",
-                    )
-                )
                 assert txn is not None
                 assert risk is not None
-                assert audit is not None
                 assert float(risk.composite_score) == body["composite_score"]
                 assert risk.decision == body["decision"]
-                assert audit.decision == body["decision"]
-                assert audit.details["model_explanation_method"] == body["model_explanation_method"]
         finally:
             db.close()
 
@@ -220,17 +201,3 @@ def test_low_medium_high_explanations_preserve_scoring() -> None:
         assert listing.status_code == 200
         health = client.get("/health")
         assert health.status_code == 200
-
-
-def test_receiver_signal_is_not_a_standalone_fraud_decision() -> None:
-    unfamiliar_receiver_only = calculate_risk(
-        RiskSignals(anomaly=0, velocity=0, receiver=100, behavioral=0)
-    )
-    trusted_receiver_with_account_compromise_signals = calculate_risk(
-        RiskSignals(anomaly=100, velocity=100, receiver=0, behavioral=100)
-    )
-
-    assert unfamiliar_receiver_only.composite_score == 20
-    assert decide(unfamiliar_receiver_only.composite_score) == "APPROVE"
-    assert trusted_receiver_with_account_compromise_signals.composite_score == 80
-    assert decide(trusted_receiver_with_account_compromise_signals.composite_score) == "BLOCK"

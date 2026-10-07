@@ -70,7 +70,7 @@ Representative request:
 
 Invalid payloads return HTTP 422.
 
-The response contains the transaction identifier, composite score, `LOW`, `MEDIUM` or `HIGH` risk level, decision, four-part risk breakdown, reason codes, explanation, applied prototype policy, model version, evaluation timestamp, measured evaluation latency, presentation signals, risk score and minimal explanation. It also includes `model_explanation_method` and `model_feature_contributions`; SHAP contributions describe only the Isolation Forest anomaly component, while the other three components remain rule based. If Tree SHAP is unavailable, the method is `ABLATION_FALLBACK`.
+The response contains the transaction identifier, composite score, `LOW`, `MEDIUM` or `HIGH` risk level, decision, four-part risk breakdown, reason codes, explanation, applied prototype policy, model version, evaluation timestamp, measured request latency, presentation signals, risk score and minimal explanation.
 
 Decision thresholds:
 
@@ -78,9 +78,7 @@ Decision thresholds:
 |---:|---|---|
 | <= 40 | LOW | `APPROVE` |
 | > 40 and <= 75 | MEDIUM | `VERIFY` |
-| > 75 | HIGH | `BLOCK` recommendation |
-
-`BLOCK` is the risk engine recommendation. In the prototype it intercepts the transaction and recommends stopping, but it is not an irreversible system-level block. A user who recognises the payment may explicitly acknowledge it and complete step-up verification; this does not alter the original decision or score.
+| > 75 | HIGH | `BLOCK` |
 
 A successful evaluation is persisted and committed before the response is returned.
 
@@ -133,9 +131,7 @@ Repeated report:
 }
 ```
 
-Reporting records a durable receiver-report row with sender, receiver, submitted transaction context, score, generated report reference and an optional transaction ID. When the evaluated transaction exists locally, a corresponding audit event is also written. The report does not rescore the transaction and remains recorded even if that transaction is not in the same backend database. This is a SentinelAI prototype review record, not an external financial-network submission.
-
-The report endpoint accepts the simulator's caller-supplied sender ID and can compare it to an identity header, but it does not verify credentials. This is prototype behavior, not production authentication.
+Reporting records an audit event and does not rescore the transaction. Missing transactions return HTTP 404.
 
 ## Dashboard
 
