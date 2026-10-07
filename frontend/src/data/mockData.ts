@@ -1,4 +1,29 @@
-import { Payee, SharedTransaction } from '../types/sentinel';
+import { BankAccount, DemoScenario, Payee, PaymentRecord, SharedTransaction, UpiContact } from '../types/sentinel';
+
+export const DEFAULT_ACCOUNT: BankAccount = {
+  id: 'SBI-4821',
+  bankName: 'State Bank of India',
+  accountMask: '•••• 4821',
+  accountHolder: 'Thanusree E',
+  balance: 142850.00,
+};
+
+export const UPI_CONTACTS: UpiContact[] = [
+  { id: 'neha', name: 'Neha Sharma', vpa: 'neha.sharma@oksbi', phone: '9876543210', category: 'Friend', initials: 'NS', verified: true, receiver_type: 'user' },
+  { id: 'aarav', name: 'Aarav Mehta', vpa: 'aarav.mehta@okaxis', phone: '9845012211', category: 'Friend', initials: 'AM', verified: true, receiver_type: 'user' },
+  { id: 'rohan', name: 'Rohan Kapoor', vpa: 'rohan.k@okhdfcbank', phone: '9900123456', category: 'Contact', initials: 'RK', verified: true, receiver_type: 'user' },
+  { id: 'meera', name: 'Meera Nair', vpa: 'meera.nair@ibl', phone: '9988776655', category: 'Contact', initials: 'MN', verified: true, receiver_type: 'user' },
+  { id: 'diya', name: 'Diya Rao', vpa: 'diya.rao@oksbi', phone: '9731554400', category: 'Contact', initials: 'DR', verified: true, receiver_type: 'user' },
+  { id: 'sahithi', name: 'Sahithi G', vpa: 'sahithi.g@okicici', phone: '9611223344', category: 'Contact', initials: 'SG', verified: true, receiver_type: 'user' },
+  { id: 'metro', name: 'Metro Mart', vpa: 'metromart@paytm', phone: '8022334455', category: 'Groceries', initials: 'MM', verified: true, receiver_type: 'merchant' },
+  { id: 'freshbasket', name: 'FreshBasket', vpa: 'freshbasket@hdfcbank', phone: '8044556677', category: 'Groceries', initials: 'FB', verified: true, receiver_type: 'merchant' },
+  { id: 'cab', name: 'Bengaluru Cabs', vpa: 'blr.cabs@axisbank', phone: '8066778899', category: 'Travel', initials: 'BC', verified: true, receiver_type: 'merchant' },
+  { id: 'cafe', name: 'Third Wave Coffee', vpa: 'thirdwave@icici', phone: '8055443322', category: 'Food & Beverage', initials: 'TW', verified: true, receiver_type: 'merchant' },
+  { id: 'pharmacy', name: 'Apollo Pharmacy', vpa: 'apollo.pharmacy@axisbank', phone: '8011002233', category: 'Health', initials: 'AP', verified: true, receiver_type: 'merchant' },
+  { id: 'books', name: 'Sapna Book House', vpa: 'sapna.books@oksbi', phone: '8099887766', category: 'Books', initials: 'SB', verified: true, receiver_type: 'merchant' },
+  { id: 'arjun', name: 'Arjun Trading', vpa: 'arjun.trade@airtel', phone: '9886010101', category: 'Business', initials: 'AT', verified: false, receiver_type: 'unverified_p2p' },
+  { id: 'electronics', name: 'Croma Electronics', vpa: 'croma.retail@axisbank', phone: '8012345678', category: 'Electronics', initials: 'CE', verified: true, receiver_type: 'new_merchant' },
+];
 
 export const PRESET_PAYEES: Payee[] = [
   {
@@ -9,49 +34,111 @@ export const PRESET_PAYEES: Payee[] = [
     initials: 'B',
     verified: true,
     defaultAmount: 450,
-    defaultNote: 'Morning artisan espresso & sandwich',
+    defaultNote: 'Morning coffee',
     presetRisk: 'low',
-    receiver_type: 'merchant'
+    receiver_type: 'merchant',
   },
   {
     id: 'naturesbasket@hdfcbank',
     name: "Nature's Basket Gourmet",
     vpa: 'naturesbasket@hdfcbank',
-    category: 'Groceries & Gourmet',
+    category: 'Groceries',
     initials: 'N',
     verified: true,
     defaultAmount: 2500,
-    defaultNote: 'Weekly organic pantry & farm produce',
+    defaultNote: 'Weekly groceries',
     presetRisk: 'low',
-    receiver_type: 'merchant'
+    receiver_type: 'merchant',
   },
   {
     id: 'croma.retail@axisbank',
     name: 'Croma Electronics',
     vpa: 'croma.retail@axisbank',
-    category: 'Consumer Electronics',
+    category: 'Electronics',
     initials: 'C',
     verified: true,
     defaultAmount: 18500,
-    defaultNote: 'Smart home hub & wireless noise-cancelling audio',
+    defaultNote: 'Electronics purchase',
     presetRisk: 'medium',
-    receiver_type: 'new_merchant'
+    receiver_type: 'new_merchant',
   },
   {
     id: 'shadow.crypto.p2p@airtel',
-    name: 'P2P Instant Crypto Cashout',
+    name: 'P2P Instant Cashout',
     vpa: 'shadow.crypto.p2p@airtel',
-    category: 'High-Risk Escrow / P2P Exchange',
+    category: 'P2P',
     initials: 'P',
     verified: false,
     defaultAmount: 94500,
-    defaultNote: 'Urgent P2P escrow release #482',
+    defaultNote: 'Urgent transfer',
     presetRisk: 'high',
-    receiver_type: 'unverified_p2p'
-  }
+    receiver_type: 'unverified_p2p',
+  },
 ];
 
-export const PRESET_AMOUNTS = [450, 2500, 18500, 94500];
+export const DEMO_SCENARIOS: DemoScenario[] = [
+  { id: 'demo-low', title: 'Low risk', subtitle: 'Known merchant, usual amount', accent: 'green', payee: PRESET_PAYEES[0] },
+  { id: 'demo-low-2', title: 'Normal grocery payment', subtitle: 'Trusted merchant, normal behaviour', accent: 'green', payee: PRESET_PAYEES[1] },
+  { id: 'demo-medium', title: 'Medium risk', subtitle: 'New merchant + unusual amount', accent: 'amber', payee: PRESET_PAYEES[2] },
+  { id: 'demo-high', title: 'High risk', subtitle: 'Large transfer + unverified receiver + device anomaly', accent: 'red', payee: PRESET_PAYEES[3] },
+];
+
+export const INITIAL_RECENT_ACTIVITY: PaymentRecord[] = [
+  {
+    id: 'hist-1',
+    transactionId: 'TXN-UPI-782341-1102',
+    upiTransactionId: '428173625901',
+    referenceNumber: '628391047215',
+    recipientName: 'Metro Mart',
+    recipientId: 'metromart@paytm',
+    amount: 620,
+    currency: 'INR',
+    timestamp: new Date(Date.now() - 1000 * 60 * 42).toISOString(),
+    status: 'Payment processed',
+    method: 'UPI_ID',
+    bankName: DEFAULT_ACCOUNT.bankName,
+    accountMask: DEFAULT_ACCOUNT.accountMask,
+    note: 'Groceries',
+    decision: 'APPROVE',
+    riskScore: 18.4,
+  },
+  {
+    id: 'hist-2',
+    transactionId: 'TXN-UPI-428190-9281',
+    upiTransactionId: '428163011248',
+    referenceNumber: '628381110938',
+    recipientName: 'Neha Sharma',
+    recipientId: 'neha.sharma@oksbi',
+    amount: 1250,
+    currency: 'INR',
+    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 22).toISOString(),
+    status: 'Payment processed',
+    method: 'CONTACT',
+    bankName: DEFAULT_ACCOUNT.bankName,
+    accountMask: DEFAULT_ACCOUNT.accountMask,
+    note: 'Dinner split',
+    decision: 'APPROVE',
+    riskScore: 21.1,
+  },
+  {
+    id: 'hist-3',
+    transactionId: 'TXN-UPI-518273-7740',
+    upiTransactionId: '428127764381',
+    referenceNumber: '628340552119',
+    recipientName: 'Aarav Mehta',
+    recipientId: 'aarav.mehta@okaxis',
+    amount: 8400,
+    currency: 'INR',
+    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 48).toISOString(),
+    status: 'Payment processed',
+    method: 'CONTACT',
+    bankName: DEFAULT_ACCOUNT.bankName,
+    accountMask: DEFAULT_ACCOUNT.accountMask,
+    note: 'Trip booking',
+    decision: 'VERIFY',
+    riskScore: 52.6,
+  },
+];
 
 export const INITIAL_TRANSACTION: SharedTransaction = {
   transaction_id: 'TXN-UPI-' + Math.floor(100000 + Math.random() * 900000) + '-7721',
@@ -63,22 +150,22 @@ export const INITIAL_TRANSACTION: SharedTransaction = {
   receiver_type: 'merchant',
   timestamp: new Date().toISOString(),
   device_id: 'DEV_APPL_IPHONE_15_PRO_ENCLAVE',
-  device_type: 'primary_ios',
-  device_name: 'Apple iPhone 15 Pro (A3102)',
+  device_type: 'ios',
+  device_name: 'Apple iPhone 15 Pro',
   location: {
     latitude: 12.9716,
     longitude: 77.5946,
     city: 'Bengaluru',
-    country: 'IND'
+    country: 'IND',
   },
   ip_address: '49.207.214.88',
   user_context: {
     account_age_days: 580,
     previous_transaction_count: 312,
     usual_transaction_range: {
-      min: 150.0,
-      max: 5000.0
-    }
+      min: 150,
+      max: 5000,
+    },
   },
-  note: 'Morning artisan espresso & sandwich'
+  note: 'Morning coffee',
 };
