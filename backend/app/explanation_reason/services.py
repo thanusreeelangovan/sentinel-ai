@@ -442,10 +442,8 @@ def _coerce_shap_item(item: Any) -> Optional[ShapFeatureContribution]:
     if isinstance(item, ShapFeatureContribution):
         return item
     if isinstance(item, Mapping):
-        feature = item.get("feature", item.get("feature_name"))
-        contribution = item.get(
-            "contribution", item.get("model_contribution")
-        )
+        feature = item.get("feature")
+        contribution = item.get("contribution")
         if feature is None or contribution is None:
             return None
         return ShapFeatureContribution(

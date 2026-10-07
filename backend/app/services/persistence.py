@@ -133,11 +133,6 @@ def persist_evaluation(
                 "reason_codes": response.reason_codes,
                 "risk_breakdown": breakdown.model_dump(),
                 "model_version": anomaly.model_version,
-                "model_explanation_method": response.model_explanation_method,
-                "model_feature_contributions": [
-                    item.model_dump()
-                    for item in response.model_feature_contributions
-                ],
             },
         )
     )

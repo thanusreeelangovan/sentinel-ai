@@ -6,9 +6,6 @@ load_dotenv()
 
 
 def get_database_url() -> str:
-    if os.getenv("FORCE_SQLITE") == "1":
-        return "sqlite:///./sentinelai.db"
-
     database_url = os.getenv("DATABASE_URL")
     if database_url:
         return database_url
@@ -29,12 +26,5 @@ def get_cors_origins() -> list[str]:
     configured_origins = os.getenv("CORS_ORIGINS")
     if configured_origins:
         return [origin.strip() for origin in configured_origins.split(",") if origin.strip()]
-
-    frontend_hostname = os.getenv("FRONTEND_HOSTNAME")
-    if frontend_hostname:
-        hostname = frontend_hostname.strip().rstrip("/")
-        if hostname.startswith("http://") or hostname.startswith("https://"):
-            return [hostname]
-        return [f"https://{hostname}"]
 
     return ["http://localhost:3000", "http://127.0.0.1:3000"]

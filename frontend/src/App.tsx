@@ -14,7 +14,6 @@ import {
 export const App: React.FC = () => {
   const [transaction, setTransaction] = useState<SharedTransaction>(INITIAL_TRANSACTION);
   const [assessment, setAssessment] = useState<RiskAssessment | null>(null);
-  const [evaluationError, setEvaluationError] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [pipelineStep, setPipelineStep] = useState<number>(0);
 
@@ -44,7 +43,6 @@ export const App: React.FC = () => {
 
   const handleExecuteTransaction = async (txToExecute: SharedTransaction) => {
     setIsProcessing(true);
-    setEvaluationError(null);
     setPipelineStep(1);
     setShowMediumModal(false);
     setShowHighModal(false);
@@ -61,19 +59,18 @@ export const App: React.FC = () => {
     setTimeout(() => setPipelineStep(4), 360);
     setTimeout(() => setPipelineStep(5), 500);
 
-    // Prefer FastAPI; report the deterministic local demo fallback as a separate source.
-    const { assessment: result, isRealBackend: backendSuccess, error } =
+    // Call Real FastAPI Backend (with automatic fallback to local deterministic ML engine)
+    const { assessment: result, isRealBackend: backendSuccess } = 
       await evaluateTransactionWithBackend(txToExecute, backendEndpoint);
 
     setTimeout(() => {
       setAssessment(result);
-      setEvaluationError(backendSuccess ? null : error || 'FastAPI was unavailable; using the local demo engine.');
       setIsProcessing(false);
 
       handleLogEvent('RISK_EVALUATION_COMPLETED', { 
         score: result.composite_score, 
         decision: result.decision,
-        source: backendSuccess ? 'FASTAPI BACKEND' : 'LOCAL DEMO ENGINE'
+        source: backendSuccess ? 'FASTAPI_BACKEND' : 'DETERMINISTIC_ENGINE'
       });
 
       if (result.composite_score <= 40) {
@@ -88,7 +85,6 @@ export const App: React.FC = () => {
 
   const handleReset = () => {
     setAssessment(null);
-    setEvaluationError(null);
     setPipelineStep(0);
     setIsProcessing(false);
     setShowMediumModal(false);
@@ -115,7 +111,6 @@ export const App: React.FC = () => {
             transaction={transaction}
             setTransaction={setTransaction}
             assessment={assessment}
-            evaluationError={evaluationError}
             onExecuteTransaction={handleExecuteTransaction}
             onReset={handleReset}
             isProcessing={isProcessing}

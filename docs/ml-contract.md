@@ -2,7 +2,7 @@
 
 ## Implemented Model
 
-SentinelAI uses scikit-learn `IsolationForest` for anomaly detection. The model service is implemented in `backend/app/ml/iforest.py` and reports model version `iforest_v1`.
+SentinelAI currently uses scikit-learn `IsolationForest` for anomaly detection. The model service is implemented in `backend/app/ml/iforest.py` and reports model version `iforest_v1`.
 
 The model is one input to the risk engine. It does not independently decide whether a transaction is approved, verified or blocked.
 
@@ -45,19 +45,10 @@ An anomaly score of at least 70 also adds the `HIGH_ANOMALY` reason code. The fi
 
 ## Feature Contributions
 
-For model explainability, the service uses SHAP `TreeExplainer` on the fitted Isolation Forest. The evaluation response exposes `model_explanation_method: "SHAP_TREE_EXPLAINER"` and up to eight feature entries containing `feature_name`, `feature_value` and `model_contribution`. Contribution values are in the model explainer's output units, not composite-risk points. They explain only the Isolation Forest anomaly component. They do not explain the weighted composite score or the independently computed rule-based velocity, receiver and behavioral components.
+For explainability, the service computes model-based feature contributions by replacing one feature at a time with its training mean and measuring the change in Isolation Forest output. The eight largest absolute contributions can be passed to the explanation layer.
 
-If Tree SHAP is unavailable or returns unusable output in a deployed environment, the service replaces one feature at a time with its training mean and measures the change in Isolation Forest output. This fallback is labelled `ABLATION_FALLBACK` in the response and logs the fallback reason. Ablation values are never labelled or displayed as SHAP. Neither method is a causal explanation.
-
-The contribution values are in the explainer's model-output units. They must not be interpreted as points in the normalized 0–100 anomaly score or as contributions to the composite score.
-For explainability, the Isolation Forest service uses SHAP TreeExplainer to calculate per-feature contributions for the fitted anomaly model. The eight largest absolute contributions are exposed with the evaluation response and can be shown in the consumer explanation view.
-
-SHAP explains the Isolation Forest anomaly model only. It does not explain the rule-based velocity, receiver or behavioral scores and therefore must not be presented as an explanation of the entire composite score.
-
-If Tree SHAP cannot run for the model in a deployed environment, the service falls back to the previous training-mean ablation method and explicitly reports `ABLATION_FALLBACK` rather than labelling those values as SHAP.
-
-These contributions are model explanations, not causal evidence that a feature caused fraud.
+These values are ablation-based model contributions. They should not be described as SHAP values or as causal explanations.
 
 ## Current Limitations
 
-The model is a prototype trained from repository baseline data. It has not been validated against production payment traffic, independently benchmarked for fraud recall or false-positive rate, or calibrated for regulated deployment. Performance claims should therefore use measured prototype results only.
+The model is a hackathon prototype trained from repository baseline data. It has not been validated against production UPI traffic, independently benchmarked for fraud recall or false-positive rate, or calibrated for regulated deployment. Performance claims should therefore use measured prototype results only.

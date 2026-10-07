@@ -36,20 +36,7 @@ Stores rule-engine evidence associated with transaction evaluation.
 
 ### `audit_logs`
 
-Stores auditable events associated with transactions, including the original evaluation recommendation and its model explanation method/contributions. Receiver reports for an evaluated transaction also create a linked report audit event.
-
-### `receiver_reports`
-
-Stores every accepted receiver report, including:
-
-| Field | Purpose |
-|---|---|
-| `report_id` | Generated report reference |
-| `sender_id`, `receiver_id` | Reporting sender and reported receiver |
-| `transaction_id` | Optional transaction identifier, even when not present in this database |
-| `risk_score` | Submitted composite risk score |
-| `transaction_context` | Submitted transaction evidence |
-| `submitted_at` | Persistence timestamp |
+Stores auditable events associated with transactions. User transaction reports are persisted as audit events with event type `REPORT`. Reporting is idempotent at the service level: a previously reported transaction returns an already-reported response rather than adding another report event.
 
 ## Investigation Context Tables
 
@@ -75,9 +62,6 @@ users
            +---- rule_events
            +---- audit_logs
 
-receiver_reports
-  (independent durable evidence; transaction_id is optional)
-
 users / accounts
   |
   +---- login events
@@ -92,7 +76,7 @@ The exact foreign-key definitions in the SQLAlchemy models are the source of tru
 
 `POST /transactions/evaluate` persists the evaluated transaction and its risk evidence. The evaluation service explicitly commits the database transaction before returning the successful API response, so a subsequent read can observe the persisted record.
 
-`POST /transactions/{transaction_id}/report` records a transaction report event without recalculating the risk score. `POST /reports` persists receiver reports independently, including when the transaction has not been evaluated by this backend.
+`POST /transactions/{transaction_id}/report` records a report event without recalculating the transaction risk score.
 
 ## Docker Persistence
 
