@@ -8,6 +8,7 @@ from app.core.config import get_database_url
 from app.db.base import Base
 from app.models import (  # noqa: F401
     audit_log,
+    blocked_receiver,
     device_event,
     investigation_case,
     ip_network_event,
