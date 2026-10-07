@@ -12,7 +12,6 @@ import {
   Eye,
   EyeOff,
   Flag,
-  History,
   Landmark,
   Loader2,
   Phone,
@@ -27,10 +26,8 @@ import {
   Users,
   WalletCards,
   Wifi,
-  XCircle,
 } from 'lucide-react';
 import {
-  BankAccount,
   DemoScenario,
   PaymentMethod,
   PaymentRecord,
@@ -141,7 +138,7 @@ const consumerReason = (code: string): string => {
     UNUSUAL_AMOUNT_SURGE: 'This amount is much higher than your usual payments.',
     EMULATOR_DEVICE_DETECTED: 'The device environment could not be trusted.',
   };
-  return labels[code] || code.replaceAll('_', ' ').toLowerCase();
+  return labels[code] || code.replace(/_/g, ' ').toLowerCase();
 };
 
 const buildReceiptBlob = async (record: PaymentRecord): Promise<Blob> => {
@@ -531,44 +528,6 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
     }));
     setPinError(null);
     setScreen('review');
-  };
-
-  const submitPin = (purpose: 'balance' | 'payment' | 'stepup' | 'activity') => {
-    if (pin.length !== 4) return;
-    if (pin !== ACCOUNT_PIN) {
-      setPinError('Incorrect UPI PIN. Please try again.');
-      setPin('');
-      return;
-    }
-
-    setPinError(null);
-    setPin('');
-
-    if (purpose === 'balance') {
-      setBalanceVisible(true);
-      setScreen('balance');
-      return;
-    }
-
-    if (purpose === 'activity') {
-      setScreen('activity_detail');
-      return;
-    }
-
-    if (purpose === 'payment') {
-      setScreen('pipeline');
-      onLogEvent?.('UPI_PIN_VERIFIED', {
-        transaction_id: transaction.transaction_id,
-        purpose: 'payment_authorization',
-      });
-      onExecuteTransaction({
-        ...transaction,
-        timestamp: new Date().toISOString(),
-      });
-      return;
-    }
-
-    completePayment();
   };
 
   const addPinDigit = (digit: string, purpose: 'balance' | 'payment' | 'stepup' | 'activity') => {
