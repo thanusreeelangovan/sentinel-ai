@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.accounts import router as accounts_router
+from app.api.blocked_receivers import router as blocked_receivers_router
 from app.api.dashboard import router as dashboard_router
 from app.api.lookups import router as lookups_router
 from app.api.transactions import router as transactions_router
@@ -31,6 +32,7 @@ app.add_middleware(
 app.include_router(transactions_router)
 app.include_router(dashboard_router)
 app.include_router(accounts_router)
+app.include_router(blocked_receivers_router)
 app.include_router(lookups_router)
 app.include_router(reports_router)
 
