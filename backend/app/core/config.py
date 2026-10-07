@@ -27,4 +27,11 @@ def get_cors_origins() -> list[str]:
     if configured_origins:
         return [origin.strip() for origin in configured_origins.split(",") if origin.strip()]
 
+    frontend_hostname = os.getenv("FRONTEND_HOSTNAME")
+    if frontend_hostname:
+        hostname = frontend_hostname.strip().rstrip("/")
+        if hostname.startswith("http://") or hostname.startswith("https://"):
+            return [hostname]
+        return [f"https://{hostname}"]
+
     return ["http://localhost:3000", "http://127.0.0.1:3000"]

@@ -55,6 +55,35 @@ Health:   https://sentinel-ai-wmfu.onrender.com/health
 Docker Compose starts PostgreSQL, waits for database health, starts FastAPI, waits for backend health, and then starts the frontend. PostgreSQL data is stored in the named `postgres_data` volume.
 `VITE_API_URL` must point to the browser-reachable FastAPI base URL for a deployed frontend. The localhost value in `.env.example` is for local development only. A production build without this setting can still fall back to the local demo for evaluation, but receiver reporting fails visibly instead of posting to the frontend origin or localhost.
 
+## Hosted Deployment
+
+### Render Blueprint
+
+The repository includes a root-level `render.yaml` that defines:
+
+* `sentinel-ai-backend`: Docker FastAPI web service
+* `sentinel-ai-frontend`: Vite static site
+* `sentinel-ai-db`: managed PostgreSQL 16
+
+The backend uses Render's managed `DATABASE_URL` and binds Uvicorn to the platform-provided `PORT`. The frontend receives the backend's external hostname at build time, and the backend receives the frontend hostname for CORS.
+
+Create a Render Blueprint from this repository and select `render.yaml`. No PostgreSQL password needs to be committed to the repository.
+
+### Vercel
+
+The frontend includes `frontend/vercel.json` for SPA routing. Configure the Vercel project root as `frontend` and set:
+
+```text
+VITE_API_URL=https://<deployed-backend-host>
+```
+
+The backend includes `backend/Dockerfile.vercel` for Vercel's Dockerfile-based HTTP deployment. It listens on the platform-provided `PORT`. Configure:
+
+```text
+DATABASE_URL=<managed-postgres-url>
+CORS_ORIGINS=https://<frontend-host>
+```
+
 ## Prototype verification
 
 The secondary step-up screen uses demonstration PIN `4092`. The fingerprint control is a simulated prototype interaction, not biometric verification. A successful high-risk continuation produces a receipt that identifies the original `BLOCK` recommendation and records that the user acknowledged it after demo-PIN verification; it does not rescore or rewrite the recommendation.
