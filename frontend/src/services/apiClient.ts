@@ -196,3 +196,62 @@ export async function checkBackendHealth(
     };
   }
 }
+
+
+export interface BlockedReceiverRecord {
+  sender_id: string;
+  receiver_id: string;
+  receiver_name?: string | null;
+  blocked_at: string;
+}
+
+export async function fetchBlockedReceivers(senderId: string): Promise<BlockedReceiverRecord[]> {
+  const base = DEFAULT_API_BASE_URL;
+  const url = `${base}/blocked-receivers?sender_id=${encodeURIComponent(senderId)}`;
+
+  const response = await fetch(url, {
+    headers: { Accept: 'application/json' },
+  });
+  if (!response.ok) {
+    throw new Error(`Blocked receiver lookup returned HTTP ${response.status}`);
+  }
+  return await response.json() as BlockedReceiverRecord[];
+}
+
+export async function blockReceiver(
+  senderId: string,
+  receiverId: string,
+  receiverName?: string,
+): Promise<BlockedReceiverRecord> {
+  const base = DEFAULT_API_BASE_URL;
+  const response = await fetch(`${base}/blocked-receivers`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    },
+    body: JSON.stringify({
+      sender_id: senderId,
+      receiver_id: receiverId,
+      receiver_name: receiverName,
+    }),
+  });
+  if (!response.ok) {
+    throw new Error(`Block receiver returned HTTP ${response.status}`);
+  }
+  return await response.json() as BlockedReceiverRecord;
+}
+
+export async function unblockReceiver(
+  senderId: string,
+  receiverId: string,
+): Promise<void> {
+  const base = DEFAULT_API_BASE_URL;
+  const response = await fetch(
+    `${base}/blocked-receivers/${encodeURIComponent(receiverId)}?sender_id=${encodeURIComponent(senderId)}`,
+    { method: 'DELETE' },
+  );
+  if (!response.ok && response.status !== 404) {
+    throw new Error(`Unblock receiver returned HTTP ${response.status}`);
+  }
+}
