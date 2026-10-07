@@ -1,4 +1,5 @@
 from app.models.audit_log import AuditLog
+from app.models.blocked_receiver import BlockedReceiver
 from app.models.device_event import DeviceEvent
 from app.models.investigation_case import InvestigationCase
 from app.models.ip_network_event import IpNetworkEvent
@@ -10,6 +11,7 @@ from app.models.user import User
 
 __all__ = [
     "AuditLog",
+    "BlockedReceiver",
     "DeviceEvent",
     "InvestigationCase",
     "IpNetworkEvent",
