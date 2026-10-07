@@ -5,7 +5,6 @@ import {
   Battery,
   Building2,
   Camera,
-  Check,
   CheckCircle2,
   ChevronRight,
   CreditCard,
@@ -140,7 +139,7 @@ const friendlyReason = (code: string) => {
     UNUSUAL_AMOUNT_SURGE: 'The amount is significantly higher than your usual payments.',
     EMULATOR_DEVICE_DETECTED: 'The device environment could not be fully trusted.',
   };
-  return reasons[code] || code.replaceAll('_', ' ').toLowerCase();
+  return reasons[code] || code.split('_').join(' ').toLowerCase();
 };
 
 const BackBar: React.FC<{ title: string; onBack: () => void }> = ({
