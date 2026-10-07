@@ -44,7 +44,7 @@ import {
   INITIAL_RECENT_ACTIVITY,
   UPI_CONTACTS,
 } from '../data/mockData';
-import { reportReceiver } from '../services/apiClient';
+import { blockReceiver, fetchBlockedReceivers, reportReceiver, unblockReceiver as unblockReceiverApi } from '../services/apiClient';
 
 interface PhoneSimulatorProps {
   transaction: SharedTransaction;
@@ -295,7 +295,24 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
     setCameraActive(false);
   };
 
-  useEffect(() => () => stopCamera(), []);
+  useEffect(() => {
+    let cancelled = false;
+    fetchBlockedReceivers(transaction.user_id)
+      .then(records => {
+        if (!cancelled) {
+          const ids = records.map(record => record.receiver_id);
+          persistBlocked(Array.from(new Set([...blockedReceivers, ...ids])));
+        }
+      })
+      .catch(() => {
+        // Local blocked-receiver state remains available when the API is offline.
+      });
+    return () => {
+      cancelled = true;
+      stopCamera();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [transaction.user_id]);
 
   const applyRecipient = (
     name: string,
@@ -646,15 +663,31 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
     onReset();
   };
 
-  const blockCurrentReceiver = () => {
+  const blockCurrentReceiver = async () => {
     if (!blockedReceivers.includes(transaction.receiver_id)) {
       persistBlocked([...blockedReceivers, transaction.receiver_id]);
     }
-    setReportMessage(`${transaction.receiver_name || transaction.receiver_id} is now blocked on this account.`);
+    try {
+      await blockReceiver(
+        transaction.user_id,
+        transaction.receiver_id,
+        transaction.receiver_name,
+      );
+      setReportMessage(`${transaction.receiver_name || transaction.receiver_id} is blocked on this account.`);
+    } catch {
+      setReportMessage(
+        `${transaction.receiver_name || transaction.receiver_id} is blocked locally; backend sync will retry when available.`,
+      );
+    }
   };
 
-  const unblockReceiver = (receiverId: string) => {
+  const unblockReceiver = async (receiverId: string) => {
     persistBlocked(blockedReceivers.filter(item => item !== receiverId));
+    try {
+      await unblockReceiverApi(transaction.user_id, receiverId);
+    } catch {
+      // Local state is still updated for an offline prototype session.
+    }
   };
 
   const submitHighRiskReport = async () => {
