@@ -1,5 +1,7 @@
 export type DecisionType = 'APPROVE' | 'VERIFY' | 'BLOCK';
 export type RiskLevel = 'LOW' | 'MEDIUM' | 'HIGH';
+export type PaymentMethod = 'CONTACT' | 'PHONE' | 'UPI_ID' | 'QR' | 'BANK_TRANSFER' | 'DEMO';
+export type PaymentStatus = 'Payment processed' | 'Cancelled' | 'Blocked';
 
 export interface LocationData {
   latitude: number;
@@ -36,10 +38,10 @@ export interface SharedTransaction {
 }
 
 export interface RiskBreakdown {
-  anomaly: number;      // 0 - 100 (weight 40%)
-  velocity: number;     // 0 - 100 (weight 25%)
-  receiver: number;     // 0 - 100 (weight 20%)
-  behavioral: number;   // 0 - 100 (weight 15%)
+  anomaly: number;
+  velocity: number;
+  receiver: number;
+  behavioral: number;
 }
 
 export interface RiskAssessment {
@@ -69,7 +71,7 @@ export interface RiskAssessment {
 export interface SHAPFeature {
   name: string;
   category: string;
-  impact_score: number; // e.g. -35 (safe) to +45 (risky)
+  impact_score: number;
   description: string;
   weight_percentage: number;
   raw_value: string;
@@ -109,4 +111,50 @@ export interface Payee {
   defaultNote: string;
   presetRisk: 'low' | 'medium' | 'high';
   receiver_type: string;
+}
+
+export interface UpiContact {
+  id: string;
+  name: string;
+  vpa: string;
+  phone: string;
+  category: string;
+  initials: string;
+  verified: boolean;
+  receiver_type: string;
+}
+
+export interface BankAccount {
+  id: string;
+  bankName: string;
+  accountMask: string;
+  accountHolder: string;
+  balance: number;
+}
+
+export interface PaymentRecord {
+  id: string;
+  transactionId: string;
+  upiTransactionId: string;
+  referenceNumber: string;
+  recipientName: string;
+  recipientId: string;
+  amount: number;
+  currency: string;
+  timestamp: string;
+  status: PaymentStatus;
+  method: PaymentMethod;
+  bankName: string;
+  accountMask: string;
+  note?: string;
+  decision?: DecisionType;
+  riskScore?: number;
+}
+
+export interface DemoScenario {
+  id: string;
+  title: string;
+  subtitle: string;
+  accent: 'green' | 'amber' | 'red';
+  payee: Payee;
 }
