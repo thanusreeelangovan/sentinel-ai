@@ -6,6 +6,9 @@ load_dotenv()
 
 
 def get_database_url() -> str:
+    if os.getenv("FORCE_SQLITE") == "1":
+        return "sqlite:///./sentinelai.db"
+
     database_url = os.getenv("DATABASE_URL")
     if database_url:
         return database_url
