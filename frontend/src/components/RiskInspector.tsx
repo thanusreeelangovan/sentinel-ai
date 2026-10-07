@@ -24,7 +24,7 @@ const reasonLabel = (code: string): string => {
     UNUSUAL_AMOUNT_SURGE: 'Amount is much higher than usual',
     EMULATOR_DEVICE_DETECTED: 'Emulator-like device context',
   };
-  return labels[code] || code.replaceAll('_', ' ').toLowerCase();
+  return labels[code] || code.split('_').join(' ').toLowerCase();
 };
 
 export const RiskInspector: React.FC<RiskInspectorProps> = ({
