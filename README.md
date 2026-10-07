@@ -8,9 +8,7 @@ SentinelAI is a hackathon prototype for pre-authorization fraud risk evaluation 
 |---:|---|---|---|
 | <= 40 | LOW | `APPROVE` | Proceed normally |
 | > 40 to 75 | MEDIUM | `VERIFY` | Step-up verification |
-| > 75 | HIGH | `BLOCK` recommendation | Intercept, explain the risk, and require explicit acknowledgement plus step-up verification to continue |
-| > 75 | HIGH | `BLOCK` risk recommendation | Intercept, explain the risk, and require an explicit verified user override to continue in the prototype |
-main
+| > 75 | HIGH | `BLOCK` risk recommendation | Intercept, explain the risk, and require explicit acknowledgement plus step-up verification to continue in the prototype |
 
 The composite risk score uses 40% Isolation Forest anomaly, 25% velocity, 20% receiver and 15% behavioral signals. LOW recommends approval with minimal friction; MEDIUM recommends verification; HIGH/BLOCK recommends stopping the payment. HIGH is not an irreversible prototype-level system block: a user who explicitly recognises the payment can continue after step-up authentication. The original score and BLOCK recommendation remain unchanged for explanation and audit.
 
