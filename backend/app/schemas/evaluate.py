@@ -1,6 +1,6 @@
 from typing import Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 
 
 class RiskBreakdown(BaseModel):
@@ -31,12 +31,6 @@ class ModelFeatureContribution(BaseModel):
     feature_name: str
     feature_value: float
     model_contribution: float
-class ModelExplanationFeature(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    feature: str
-    contribution: float
-    value: float
 
 
 class EvaluateResponse(BaseModel):
@@ -53,10 +47,9 @@ class EvaluateResponse(BaseModel):
     model_version: str
     evaluated_at: str
     latency_ms: int
+    evaluation_source: Literal["FASTAPI BACKEND"] = "FASTAPI BACKEND"
     signals: EvaluationSignals
     model_explanation_method: Literal["SHAP_TREE_EXPLAINER", "ABLATION_FALLBACK"]
     model_feature_contributions: list[ModelFeatureContribution]
     risk_score: Optional[float] = None
     minimal_explanation: Optional[str] = None
-    model_explanation_method: str = "UNAVAILABLE"
-    model_explanation_features: list[ModelExplanationFeature] = Field(default_factory=list)
