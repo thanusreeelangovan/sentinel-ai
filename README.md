@@ -8,9 +8,7 @@ SentinelAI is a hackathon prototype for pre-authorization fraud risk evaluation 
 |---:|---|---|---|
 | <= 40 | LOW | `APPROVE` | Proceed normally |
 | > 40 to 75 | MEDIUM | `VERIFY` | Step-up verification |
-| > 75 | HIGH | `BLOCK` recommendation | Intercept, explain the risk, and require explicit acknowledgement plus step-up verification to continue |
 | > 75 | HIGH | `BLOCK` risk recommendation | Intercept, explain the risk, and require an explicit verified user override to continue in the prototype |
-main
 
 The composite risk score uses 40% Isolation Forest anomaly, 25% velocity, 20% receiver and 15% behavioral signals. LOW recommends approval with minimal friction; MEDIUM recommends verification; HIGH/BLOCK recommends stopping the payment. HIGH is not an irreversible prototype-level system block: a user who explicitly recognises the payment can continue after step-up authentication. The original score and BLOCK recommendation remain unchanged for explanation and audit.
 
@@ -56,6 +54,35 @@ Health:   https://sentinel-ai-wmfu.onrender.com/health
 
 Docker Compose starts PostgreSQL, waits for database health, starts FastAPI, waits for backend health, and then starts the frontend. PostgreSQL data is stored in the named `postgres_data` volume.
 `VITE_API_URL` must point to the browser-reachable FastAPI base URL for a deployed frontend. The localhost value in `.env.example` is for local development only. A production build without this setting can still fall back to the local demo for evaluation, but receiver reporting fails visibly instead of posting to the frontend origin or localhost.
+
+## Hosted Deployment
+
+### Render Blueprint
+
+The repository includes a root-level `render.yaml` that defines:
+
+* `sentinel-ai-backend`: Docker FastAPI web service
+* `sentinel-ai-frontend`: Vite static site
+* `sentinel-ai-db`: managed PostgreSQL 16
+
+The backend uses Render's managed `DATABASE_URL` and binds Uvicorn to the platform-provided `PORT`. The frontend receives the backend's external hostname at build time, and the backend receives the frontend hostname for CORS.
+
+Create a Render Blueprint from this repository and select `render.yaml`. No PostgreSQL password needs to be committed to the repository.
+
+### Vercel
+
+The frontend includes `frontend/vercel.json` for SPA routing. Configure the Vercel project root as `frontend` and set:
+
+```text
+VITE_API_URL=https://<deployed-backend-host>
+```
+
+The backend includes `backend/Dockerfile.vercel` for Vercel's Dockerfile-based HTTP deployment. It listens on the platform-provided `PORT`. Configure:
+
+```text
+DATABASE_URL=<managed-postgres-url>
+CORS_ORIGINS=https://<frontend-host>
+```
 
 ## Prototype verification
 
