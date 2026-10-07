@@ -10,7 +10,6 @@ SentinelAI is a hackathon prototype for pre-authorization fraud risk evaluation 
 | > 40 to 75 | MEDIUM | `VERIFY` | Step-up verification |
 feat/explainable-risk-interception
 | > 75 | HIGH | `BLOCK` recommendation | Intercept, explain the risk, and require explicit acknowledgement plus step-up verification to continue |
-=======
 | > 75 | HIGH | `BLOCK` risk recommendation | Intercept, explain the risk, and require an explicit verified user override to continue in the prototype |
 main
 
