@@ -157,4 +157,6 @@ export interface DemoScenario {
   subtitle: string;
   accent: 'green' | 'amber' | 'red';
   payee: Payee;
+  takeover?: boolean;
+  demoTimestamp?: string;
 }
