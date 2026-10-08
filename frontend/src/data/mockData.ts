@@ -74,6 +74,18 @@ export const PRESET_PAYEES: Payee[] = [
     presetRisk: 'high',
     receiver_type: 'unverified_p2p',
   },
+  {
+    id: 'xyz.receiver@upi',
+    name: 'XYZ Receiver',
+    vpa: 'xyz.receiver@upi',
+    category: 'Unknown recipient',
+    initials: 'XR',
+    verified: false,
+    defaultAmount: 80000,
+    defaultNote: 'Night transfer',
+    presetRisk: 'high',
+    receiver_type: 'unverified_p2p',
+  },
 ];
 
 export const DEMO_SCENARIOS: DemoScenario[] = [
@@ -81,6 +93,15 @@ export const DEMO_SCENARIOS: DemoScenario[] = [
   { id: 'demo-low-2', title: 'Normal grocery payment', subtitle: 'Trusted merchant, normal behaviour', accent: 'green', payee: PRESET_PAYEES[1] },
   { id: 'demo-medium', title: 'Medium risk', subtitle: 'New merchant + unusual amount', accent: 'amber', payee: PRESET_PAYEES[2] },
   { id: 'demo-high', title: 'High risk', subtitle: 'Large transfer + unverified receiver + device anomaly', accent: 'red', payee: PRESET_PAYEES[3] },
+  {
+    id: 'demo-takeover',
+    title: 'Account takeover',
+    subtitle: '3:08 AM · ₹80,000 · stolen PIN assumed',
+    accent: 'red',
+    payee: PRESET_PAYEES[4],
+    takeover: true,
+    demoTimestamp: '2026-10-09T03:08:00+05:30',
+  },
 ];
 
 export const INITIAL_RECENT_ACTIVITY: PaymentRecord[] = [

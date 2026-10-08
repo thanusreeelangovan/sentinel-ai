@@ -69,6 +69,9 @@ type ScreenType =
   | 'payment_pin'
   | 'pipeline'
   | 'risk_interstitial'
+  | 'takeover_block'
+  | 'account_recovery'
+  | 'account_secured'
   | 'stepup_pin'
   | 'result'
   | 'activity'
@@ -76,6 +79,7 @@ type ScreenType =
   | 'activity_detail';
 
 const ACCOUNT_PIN = '4092';
+const DEMO_MFA_CODE = '731904';
 const HISTORY_STORAGE_KEY = 'sentinel_recent_activity';
 const BLOCKED_STORAGE_KEY = 'sentinel_blocked_receivers';
 
@@ -236,6 +240,10 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
   const [qrMessage, setQrMessage] = useState('Point the camera at a UPI QR or upload one from your gallery.');
   const [cameraActive, setCameraActive] = useState(false);
   const [shareMessage, setShareMessage] = useState('');
+  const [takeoverDemo, setTakeoverDemo] = useState(false);
+  const [accountFrozen, setAccountFrozen] = useState(false);
+  const [mfaCode, setMfaCode] = useState('');
+  const [mfaError, setMfaError] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const cameraStreamRef = useRef<MediaStream | null>(null);
   const scanTimerRef = useRef<number | null>(null);
@@ -337,6 +345,13 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
     presetNote?: string,
     riskyDevice = false,
   ) => {
+    if (accountFrozen) {
+      setPinError('Payments are temporarily frozen after account recovery. Reset the simulator to start a new demo session.');
+      return;
+    }
+
+    setTakeoverDemo(false);
+
     if (blockedReceivers.includes(id)) {
       setPinError('This receiver is blocked. Unblock them before starting another payment.');
       return;
@@ -540,7 +555,7 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
     setTransaction(prev => ({
       ...prev,
       amount,
-      timestamp: new Date().toISOString(),
+      timestamp: takeoverDemo ? prev.timestamp : new Date().toISOString(),
       note,
     }));
     setPinError(null);
@@ -571,7 +586,7 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
         setScreen('pipeline');
         onExecuteTransaction({
           ...transaction,
-          timestamp: new Date().toISOString(),
+          timestamp: takeoverDemo ? transaction.timestamp : new Date().toISOString(),
         });
       } else {
         completePayment();
@@ -646,6 +661,17 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
 
     if (assessment.risk_level === 'LOW') {
       completePayment();
+    } else if (
+      assessment.policy_applied === 'POLICY_ACCOUNT_TAKEOVER_HARD_BLOCK' ||
+      assessment.reason_codes.includes('ACCOUNT_TAKEOVER_SUSPECTED')
+    ) {
+      setScreen('takeover_block');
+      onLogEvent?.('ACCOUNT_TAKEOVER_HARD_BLOCK', {
+        transaction_id: transaction.transaction_id,
+        amount: transaction.amount,
+        receiver_id: transaction.receiver_id,
+        policy: assessment.policy_applied,
+      });
     } else {
       setScreen('risk_interstitial');
     }
@@ -686,14 +712,14 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
     }
   };
 
-  const submitHighRiskReport = async () => {
+  const submitHighRiskReport = async (reasonOverride?: string) => {
     setReportState('loading');
     setReportMessage('');
     const response = await reportReceiver({
       sender_id: transaction.user_id,
       receiver_id: transaction.receiver_id,
       risk_score: assessment?.composite_score || 0,
-      reason: reportReason,
+      reason: reasonOverride || reportReason,
       transaction_context: {
         transaction_id: transaction.transaction_id,
         amount: transaction.amount,
@@ -713,6 +739,11 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
   };
 
   const runDemo = (scenario: DemoScenario) => {
+    if (accountFrozen) {
+      setPinError('Payments are temporarily frozen after account recovery. Reset the simulator to start a new demo session.');
+      return;
+    }
+
     const payee = scenario.payee;
 
     if (blockedReceivers.includes(payee.vpa)) {
@@ -732,6 +763,7 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
         receiver_type: payee.receiver_type,
       };
 
+    setTakeoverDemo(Boolean(scenario.takeover));
     setPaymentMethod('DEMO');
     setSelectedContact(contact);
     setAmountInput(String(payee.defaultAmount));
@@ -743,16 +775,40 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
       receiver_id: payee.vpa,
       receiver_name: payee.name,
       receiver_type: payee.receiver_type,
-      timestamp: new Date().toISOString(),
+      timestamp: scenario.demoTimestamp || new Date().toISOString(),
       note: payee.defaultNote,
-      device_type: payee.presetRisk === 'high' ? 'android_emulator' : 'ios',
-      device_id:
-        payee.presetRisk === 'high'
+      // The takeover demo intentionally assumes the attacker has the registered
+      // phone and correct UPI PIN. Context, not credential failure, stops it.
+      device_type: scenario.takeover
+        ? 'ios'
+        : payee.presetRisk === 'high'
+          ? 'android_emulator'
+          : 'ios',
+      device_id: scenario.takeover
+        ? 'DEV_APPL_IPHONE_15_PRO_ENCLAVE'
+        : payee.presetRisk === 'high'
           ? 'DEV_ROOTED_EMU_X86'
           : 'DEV_APPL_IPHONE_15_PRO_ENCLAVE',
     }));
     setPinError(null);
     setScreen('amount');
+  };
+
+  const verifyRecoveryMfa = async () => {
+    if (mfaCode !== DEMO_MFA_CODE) {
+      setMfaError('MFA verification failed. The UPI PIN cannot be used for account recovery.');
+      return;
+    }
+
+    setMfaError(null);
+    setAccountFrozen(true);
+    await blockCurrentReceiver();
+    onLogEvent?.('ACCOUNT_RECOVERY_MFA_SUCCESS', {
+      transaction_id: transaction.transaction_id,
+      receiver_id: transaction.receiver_id,
+      recovery_factor: 'DEMO_TRUSTED_DEVICE_MFA',
+    });
+    setScreen('account_secured');
   };
 
   const openRecentRecord = (record: PaymentRecord) => {
@@ -919,6 +975,20 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
               </div>
             </div>
 
+            {accountFrozen && (
+              <div className="mt-4 rounded-2xl border border-emerald-800/60 bg-emerald-950/20 p-3">
+                <div className="flex items-start gap-2">
+                  <ShieldCheck className="w-4 h-4 text-emerald-400 mt-0.5" />
+                  <div>
+                    <p className="text-[10px] font-bold text-emerald-300">Account secured</p>
+                    <p className="text-[9px] text-zinc-500 mt-1">
+                      UPI payments are frozen for this demo session after independent MFA recovery.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="mt-4 rounded-3xl border border-zinc-700 bg-zinc-900/80 p-4">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-2xl bg-rose-950 border border-rose-800 flex items-center justify-center">
@@ -956,11 +1026,12 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
               {paymentActions.map(action => (
                 <button
                   key={action.label}
+                  disabled={accountFrozen}
                   onClick={() => {
                     setPinError(null);
                     setScreen(action.screen);
                   }}
-                  className="flex flex-col items-center gap-2 rounded-2xl border border-zinc-800 bg-zinc-900/70 p-3 hover:border-rose-600 transition"
+                  className="flex flex-col items-center gap-2 rounded-2xl border border-zinc-800 bg-zinc-900/70 p-3 hover:border-rose-600 transition disabled:opacity-40"
                 >
                   <action.icon className="w-5 h-5 text-rose-400" />
                   <span className="text-[9px] text-zinc-300 text-center">{action.label}</span>
@@ -969,11 +1040,12 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
             </div>
 
             <button
+              disabled={accountFrozen}
               onClick={() => {
                 setPinError(null);
                 setScreen('bank_transfer');
               }}
-              className="w-full mt-2 rounded-2xl border border-zinc-800 bg-zinc-900/70 p-3 flex items-center justify-between text-left"
+              className="w-full mt-2 rounded-2xl border border-zinc-800 bg-zinc-900/70 p-3 flex items-center justify-between text-left disabled:opacity-40"
             >
               <div className="flex items-center gap-3">
                 <Landmark className="w-5 h-5 text-rose-400" />
@@ -1380,6 +1452,174 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
           </div>
         )}
 
+        {screen === 'takeover_block' && assessment && (
+          <div className="flex-1 p-5 overflow-y-auto">
+            <div className="w-14 h-14 rounded-2xl bg-red-950 border border-red-800 flex items-center justify-center">
+              <Ban className="w-7 h-7 text-red-400" />
+            </div>
+
+            <p className="text-[9px] uppercase tracking-[0.2em] text-red-400 mt-5">Account takeover protection</p>
+            <h3 className="text-xl font-black text-white mt-2">Payment blocked for your protection</h3>
+
+            <div className="mt-4 rounded-2xl border border-red-900 bg-red-950/20 p-4">
+              <p className="text-3xl font-black text-white">₹{formatAmount(transaction.amount)}</p>
+              <p className="text-sm font-bold text-zinc-200 mt-2">{transaction.receiver_name || transaction.receiver_id}</p>
+              <p className="text-[10px] text-zinc-500 mt-1">{transaction.receiver_id}</p>
+            </div>
+
+            <p className="text-xs text-zinc-400 mt-4 leading-relaxed">
+              This payment strongly differs from your normal account activity.
+            </p>
+
+            <p className="text-[10px] uppercase tracking-[0.16em] text-zinc-500 mt-5 mb-2">Detected</p>
+            <div className="space-y-2">
+              {[
+                'Unusual payment time (3:08 AM)',
+                'Unusually large amount',
+                'New recipient',
+                'Abnormal account behaviour',
+              ].map(item => (
+                <div key={item} className="flex items-start gap-2 text-[11px] text-zinc-300">
+                  <span className="w-1.5 h-1.5 rounded-full bg-red-400 mt-1.5 flex-shrink-0" />
+                  <span>{item}</span>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-5 rounded-xl border border-zinc-800 bg-zinc-900/70 p-3">
+              <p className="text-[10px] font-bold text-white">Why the correct PIN did not authorize it</p>
+              <p className="text-[9px] text-zinc-500 mt-1 leading-relaxed">
+                SentinelAI treats valid credentials as insufficient when transaction context matches an account-takeover pattern. This hard block cannot be overridden with the same UPI PIN.
+              </p>
+            </div>
+
+            <p className="text-xs text-zinc-400 mt-4">We temporarily stopped this payment.</p>
+
+            {reportMessage && (
+              <p className={`text-[10px] mt-3 ${reportState === 'error' ? 'text-red-400' : 'text-zinc-400'}`}>
+                {reportMessage}
+              </p>
+            )}
+
+            <div className="space-y-2 mt-6">
+              <button
+                onClick={() => {
+                  setMfaCode('');
+                  setMfaError(null);
+                  setScreen('account_recovery');
+                }}
+                className="w-full py-3 rounded-2xl bg-white text-black text-xs font-bold flex items-center justify-center gap-2"
+              >
+                <ShieldCheck className="w-4 h-4" />
+                Secure my account
+              </button>
+              <button
+                onClick={() => submitHighRiskReport('Account takeover suspected')}
+                disabled={reportState === 'loading'}
+                className="w-full py-3 rounded-2xl border border-red-800 text-red-300 text-xs font-bold flex items-center justify-center gap-2"
+              >
+                {reportState === 'loading' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Flag className="w-4 h-4" />}
+                Report activity
+              </button>
+            </div>
+          </div>
+        )}
+
+        {screen === 'account_recovery' && (
+          <div className="flex-1 p-5 flex flex-col">
+            <button
+              onClick={() => setScreen('takeover_block')}
+              className="w-9 h-9 rounded-xl border border-zinc-700 flex items-center justify-center text-zinc-300"
+            >
+              <ArrowLeft className="w-4 h-4" />
+            </button>
+
+            <div className="text-center mt-7">
+              <div className="w-14 h-14 mx-auto rounded-2xl bg-emerald-950 border border-emerald-800 flex items-center justify-center">
+                <ShieldCheck className="w-7 h-7 text-emerald-400" />
+              </div>
+              <h3 className="text-lg font-black text-white mt-4">Independent MFA required</h3>
+              <p className="text-xs text-zinc-500 mt-2 leading-relaxed">
+                Your UPI PIN may be compromised, so it cannot be used to recover the account.
+              </p>
+            </div>
+
+            <div className="mt-5 rounded-2xl border border-zinc-800 bg-zinc-900/70 p-4">
+              <p className="text-[10px] font-bold text-zinc-200">Trusted-device recovery</p>
+              <p className="text-[9px] text-zinc-500 mt-1 leading-relaxed">
+                Prototype simulation. A production integration would use a bank-controlled passkey, trusted-device approval, or equivalent independent factor.
+              </p>
+              <div className="mt-3 rounded-xl border border-amber-800/50 bg-amber-950/20 p-2.5">
+                <p className="text-[9px] text-amber-300">Demo MFA code: <span className="font-mono font-bold">731904</span></p>
+              </div>
+            </div>
+
+            <input
+              autoFocus
+              value={mfaCode}
+              onChange={event => {
+                setMfaCode(event.target.value.replace(/\D/g, '').slice(0, 6));
+                setMfaError(null);
+              }}
+              onKeyDown={event => {
+                if (event.key === 'Enter' && mfaCode.length === 6) {
+                  void verifyRecoveryMfa();
+                }
+              }}
+              inputMode="numeric"
+              type="password"
+              maxLength={6}
+              placeholder="Enter 6-digit MFA code"
+              className="w-full mt-5 rounded-2xl border border-zinc-700 bg-zinc-900 px-4 py-3 text-center text-lg tracking-[0.35em] text-white outline-none focus:border-emerald-600"
+            />
+
+            {mfaError && <p className="text-[10px] text-red-400 text-center mt-3">{mfaError}</p>}
+
+            <button
+              disabled={mfaCode.length !== 6}
+              onClick={() => void verifyRecoveryMfa()}
+              className="w-full mt-auto py-3 rounded-2xl bg-emerald-600 text-white text-xs font-bold disabled:opacity-40"
+            >
+              Verify & secure account
+            </button>
+          </div>
+        )}
+
+        {screen === 'account_secured' && (
+          <div className="flex-1 p-5 flex flex-col">
+            <div className="flex-1 flex flex-col items-center justify-center text-center">
+              <div className="w-16 h-16 rounded-full bg-emerald-950 border border-emerald-800 flex items-center justify-center">
+                <CheckCircle2 className="w-8 h-8 text-emerald-400" />
+              </div>
+              <h3 className="text-xl font-black text-white mt-4">Account secured</h3>
+              <p className="text-xs text-zinc-400 mt-2 max-w-[280px]">
+                Independent MFA succeeded. The suspicious payment remains blocked.
+              </p>
+
+              <div className="w-full mt-6 rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4 text-left space-y-3">
+                {[
+                  'Suspicious receiver blocked',
+                  'UPI payments frozen for this demo session',
+                  'Account recovery event added to the audit trail',
+                  'Production flow would revoke active sessions and require bank-side credential reset',
+                ].map(item => (
+                  <div key={item} className="flex items-start gap-2 text-[10px] text-zinc-300">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 mt-0.5 flex-shrink-0" />
+                    <span>{item}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <button
+              onClick={goHome}
+              className="w-full py-3 rounded-2xl bg-white text-black text-xs font-bold"
+            >
+              Return home
+            </button>
+          </div>
+        )}
+
         {screen === 'risk_interstitial' && assessment && (
           <div className="flex-1 p-5 overflow-y-auto">
             <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${
@@ -1431,7 +1671,7 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
 
                 <div className="grid grid-cols-2 gap-2">
                   <button
-                    onClick={submitHighRiskReport}
+                    onClick={() => submitHighRiskReport()}
                     disabled={reportState === 'loading'}
                     className="py-2.5 rounded-xl border border-red-800 bg-red-950/20 text-[10px] font-bold text-red-300 flex items-center justify-center gap-1.5"
                   >
@@ -1616,6 +1856,10 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
           setReportState('idle');
           setReportMessage('');
           setAccountBalance(DEFAULT_ACCOUNT.balance);
+          setAccountFrozen(false);
+          setTakeoverDemo(false);
+          setMfaCode('');
+          setMfaError(null);
           goHome();
         }}
         className="mt-4 text-[10px] text-zinc-500 hover:text-zinc-300 flex items-center gap-1.5"

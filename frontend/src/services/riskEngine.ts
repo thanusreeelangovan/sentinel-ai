@@ -40,6 +40,13 @@ export function calculateRiskAssessment(
   // Evaluate Amount vs User Historical Range
   const { min, max } = tx.user_context?.usual_transaction_range || { min: 50, max: 5000 };
   const ratio = tx.amount / (max || 5000);
+  const hourMatch = tx.timestamp.match(/T(\d{2}):/);
+  const transactionHour = hourMatch ? Number(hourMatch[1]) : new Date(tx.timestamp).getHours();
+  const unusualHour = transactionHour >= 0 && transactionHour < 5;
+
+  if (unusualHour) {
+    behavioralScore += 25.0;
+  }
 
   if (ratio > 10) {
     anomalyScore += 48.0;
@@ -62,6 +69,11 @@ export function calculateRiskAssessment(
     anomalyScore += 18.0;
     behavioralScore += 20.0;
   }
+
+  const accountTakeover =
+    unusualHour &&
+    ratio >= 5 &&
+    ['unverified_p2p', 'new_merchant'].includes(tx.receiver_type);
 
   // Apply overrides if provided (for sandbox experimentation)
   const finalAnomaly = Math.min(100, Math.max(0, overrides?.anomaly ?? anomalyScore));
@@ -93,6 +105,12 @@ export function calculateRiskAssessment(
     policyApplied = 'POLICY_ZERO_TRUST_DEVICE_COMPROMISE';
   }
 
+  if (accountTakeover) {
+    decision = 'BLOCK';
+    riskLevel = 'HIGH';
+    policyApplied = 'POLICY_ACCOUNT_TAKEOVER_HARD_BLOCK';
+  }
+
   // Generate reason codes directly tied to triggered rules
   const reasonCodes: string[] = [];
   if (finalAnomaly > 60) reasonCodes.push('HIGH_ANOMALY');
@@ -101,6 +119,8 @@ export function calculateRiskAssessment(
   if (finalBehavioral > 60) reasonCodes.push('BEHAVIORAL_DEVIATION');
   if (ratio > 3) reasonCodes.push('UNUSUAL_AMOUNT_SURGE');
   if (tx.device_type === 'android_emulator') reasonCodes.push('EMULATOR_DEVICE_DETECTED');
+  if (unusualHour) reasonCodes.push('UNUSUAL_HOUR');
+  if (accountTakeover) reasonCodes.unshift('ACCOUNT_TAKEOVER_SUSPECTED');
 
   if (reasonCodes.length === 0 && riskLevel === 'LOW') {
     reasonCodes.push('LOW_RISK_BASELINE_CONFIRMED', 'TRUSTED_DEVICE_BIOMETRICS_MATCH');
@@ -108,7 +128,9 @@ export function calculateRiskAssessment(
 
   // Context-specific explanation
   let explanation = '';
-  if (decision === 'APPROVE') {
+  if (accountTakeover) {
+    explanation = `Payment hard-blocked: SentinelAI detected an account-takeover pattern on ₹${tx.amount.toLocaleString('en-IN')} to ${tx.receiver_name || tx.receiver_id}. A valid UPI PIN is not sufficient to override this policy.`;
+  } else if (decision === 'APPROVE') {
     explanation = `SentinelAI verified this ₹${tx.amount.toLocaleString('en-IN')} transaction to ${tx.receiver_name || tx.receiver_id} as safe (${compositeScore}/100 low risk) and authorized immediate routing.`;
   } else if (decision === 'VERIFY') {
     explanation = `SentinelAI flagged elevated risk (${compositeScore}/100 medium risk) on ₹${tx.amount.toLocaleString('en-IN')} to ${tx.receiver_name || tx.receiver_id} due to ${reasonCodes.join(', ')}. Step-up secondary verification required.`;
@@ -116,8 +138,8 @@ export function calculateRiskAssessment(
     explanation = `SentinelAI intercepted and flagged HIGH RISK on ₹${tx.amount.toLocaleString('en-IN')} transaction to ${tx.receiver_name || tx.receiver_id} (score: ${compositeScore}/100) due to critical anomaly and recipient risk.`;
   }
 
-  const isHigh = compositeScore > 75;
-  const isMed = compositeScore > 40 && compositeScore <= 75;
+  const isHigh = riskLevel === 'HIGH';
+  const isMed = riskLevel === 'MEDIUM';
 
   return {
     transaction_id: tx.transaction_id,
