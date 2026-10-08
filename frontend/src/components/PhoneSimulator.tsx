@@ -76,7 +76,6 @@ type ScreenType =
   | 'activity_detail';
 
 const ACCOUNT_PIN = '4092';
-const BALANCE_STORAGE_KEY = 'sentinel_account_balance';
 const HISTORY_STORAGE_KEY = 'sentinel_recent_activity';
 const BLOCKED_STORAGE_KEY = 'sentinel_blocked_receivers';
 
@@ -224,10 +223,7 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [pin, setPin] = useState('');
   const [pinError, setPinError] = useState<string | null>(null);
-  const [accountBalance, setAccountBalance] = useState<number>(() => {
-    const saved = localStorage.getItem(BALANCE_STORAGE_KEY);
-    return saved ? Number(saved) : DEFAULT_ACCOUNT.balance;
-  });
+  const [accountBalance, setAccountBalance] = useState<number>(DEFAULT_ACCOUNT.balance);
   const [balanceVisible, setBalanceVisible] = useState(false);
   const [history, setHistory] = useState<PaymentRecord[]>(loadHistory);
   const [selectedRecord, setSelectedRecord] = useState<PaymentRecord | null>(null);
@@ -243,6 +239,7 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const cameraStreamRef = useRef<MediaStream | null>(null);
   const scanTimerRef = useRef<number | null>(null);
+  const pinInputRef = useRef<HTMLInputElement | null>(null);
 
   const filteredContacts = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -550,77 +547,64 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
     setScreen('review');
   };
 
-  const addPinDigit = (digit: string, purpose: 'balance' | 'payment' | 'stepup' | 'activity') => {
-    if (pin.length >= 4) return;
-    const next = pin + digit;
-    setPin(next);
-    setPinError(null);
-    if (next.length === 4) {
-      window.setTimeout(() => {
-        setPin(next);
-        if (next !== ACCOUNT_PIN) {
-          setPinError('Incorrect UPI PIN. Please try again.');
-          setPin('');
-          return;
-        }
+  const completePinAttempt = (
+    enteredPin: string,
+    purpose: 'balance' | 'payment' | 'stepup' | 'activity',
+  ) => {
+    window.setTimeout(() => {
+      if (enteredPin !== ACCOUNT_PIN) {
+        setPinError('Incorrect UPI PIN. Please try again.');
         setPin('');
-        setPinError(null);
-        if (purpose === 'balance') {
-          setBalanceVisible(true);
-          setScreen('balance');
-        } else if (purpose === 'activity') {
-          setScreen('activity_detail');
-        } else if (purpose === 'payment') {
-          setScreen('pipeline');
-          onExecuteTransaction({
-            ...transaction,
-            timestamp: new Date().toISOString(),
-          });
-        } else {
-          completePayment();
-        }
-      }, 180);
-    }
-  };
-
-  useEffect(() => {
-    const purpose =
-      screen === 'balance_pin'
-        ? 'balance'
-        : screen === 'payment_pin'
-          ? 'payment'
-          : screen === 'stepup_pin'
-            ? 'stepup'
-            : screen === 'activity_pin'
-              ? 'activity'
-              : null;
-
-    if (!purpose) return;
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (/^[0-9]$/.test(event.key)) {
-        event.preventDefault();
-        addPinDigit(event.key, purpose);
+        window.setTimeout(() => pinInputRef.current?.focus(), 0);
         return;
       }
 
-      if (event.key === 'Backspace' || event.key === 'Delete') {
-        event.preventDefault();
-        setPin(current => current.slice(0, -1));
-        setPinError(null);
-      }
-    };
+      setPin('');
+      setPinError(null);
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-    // Physical keyboard mirrors the on-screen PIN pad for faster live demos.
-  }, [screen, pin, transaction, assessment, accountBalance, history, paymentMethod]);
+      if (purpose === 'balance') {
+        setBalanceVisible(true);
+        setScreen('balance');
+      } else if (purpose === 'activity') {
+        setScreen('activity_detail');
+      } else if (purpose === 'payment') {
+        setScreen('pipeline');
+        onExecuteTransaction({
+          ...transaction,
+          timestamp: new Date().toISOString(),
+        });
+      } else {
+        completePayment();
+      }
+    }, 120);
+  };
+
+  const updatePin = (
+    rawValue: string,
+    purpose: 'balance' | 'payment' | 'stepup' | 'activity',
+  ) => {
+    const digits = rawValue.replace(/\D/g, '').slice(0, 4);
+    setPin(digits);
+    setPinError(null);
+
+    if (digits.length === 4) {
+      completePinAttempt(digits, purpose);
+    }
+  };
+
+  const addPinDigit = (
+    digit: string,
+    purpose: 'balance' | 'payment' | 'stepup' | 'activity',
+  ) => {
+    if (pin.length >= 4) return;
+    updatePin(pin + digit, purpose);
+    window.setTimeout(() => pinInputRef.current?.focus(), 0);
+  };
 
   const completePayment = () => {
     const amount = transaction.amount;
     const nextBalance = Math.max(0, accountBalance - amount);
     setAccountBalance(nextBalance);
-    localStorage.setItem(BALANCE_STORAGE_KEY, String(nextBalance));
 
     const record: PaymentRecord = {
       id: crypto.randomUUID(),
@@ -730,16 +714,44 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
 
   const runDemo = (scenario: DemoScenario) => {
     const payee = scenario.payee;
-    applyRecipient(
-      payee.name,
-      payee.vpa,
-      payee.receiver_type,
-      'DEMO',
-      payee.defaultAmount,
-      payee.defaultNote,
-      payee.presetRisk === 'high',
-    );
-    // Keep the deterministic demo amount, but let the presenter edit it before paying.
+
+    if (blockedReceivers.includes(payee.vpa)) {
+      setPinError('This receiver is blocked. Unblock them before starting another payment.');
+      return;
+    }
+
+    const contact =
+      UPI_CONTACTS.find(item => item.vpa === payee.vpa) || {
+        id: payee.id,
+        name: payee.name,
+        vpa: payee.vpa,
+        phone: '',
+        category: payee.category,
+        initials: payee.initials,
+        verified: payee.verified,
+        receiver_type: payee.receiver_type,
+      };
+
+    setPaymentMethod('DEMO');
+    setSelectedContact(contact);
+    setAmountInput(String(payee.defaultAmount));
+    setNote(payee.defaultNote);
+    setTransaction(prev => ({
+      ...prev,
+      transaction_id: newTransactionId(),
+      amount: payee.defaultAmount,
+      receiver_id: payee.vpa,
+      receiver_name: payee.name,
+      receiver_type: payee.receiver_type,
+      timestamp: new Date().toISOString(),
+      note: payee.defaultNote,
+      device_type: payee.presetRisk === 'high' ? 'android_emulator' : 'ios',
+      device_id:
+        payee.presetRisk === 'high'
+          ? 'DEV_ROOTED_EMU_X86'
+          : 'DEV_APPL_IPHONE_15_PRO_ENCLAVE',
+    }));
+    setPinError(null);
     setScreen('amount');
   };
 
@@ -816,7 +828,21 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
         <h3 className="text-lg font-bold text-white">{title}</h3>
         <p className="text-xs text-zinc-500 mt-2">{subtitle}</p>
 
-        <div className="flex justify-center gap-3 mt-6">
+        <input
+          ref={pinInputRef}
+          autoFocus
+          type="password"
+          inputMode="numeric"
+          autoComplete="off"
+          maxLength={4}
+          value={pin}
+          onChange={event => updatePin(event.target.value, purpose)}
+          onBlur={() => window.setTimeout(() => pinInputRef.current?.focus(), 0)}
+          aria-label="UPI PIN"
+          className="absolute w-px h-px opacity-0"
+        />
+
+        <div className="flex justify-center gap-3 mt-6" onClick={() => pinInputRef.current?.focus()}>
           {[0, 1, 2, 3].map(index => (
             <div
               key={index}
@@ -826,6 +852,7 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
             />
           ))}
         </div>
+        <p className="text-[9px] text-zinc-600 mt-3">Type the 4-digit PIN on your keyboard or use the keypad.</p>
 
         {pinError && <p className="text-xs text-red-400 mt-4">{pinError}</p>}
       </div>
@@ -1265,6 +1292,9 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
               </div>
               <h3 className="text-sm font-bold text-white mt-3">{selectedContact.name}</h3>
               <p className="text-[10px] text-zinc-500 mt-1">{selectedContact.vpa}</p>
+              {paymentMethod === 'DEMO' && (
+                <p className="text-[9px] text-rose-300 mt-2">Demo amount loaded below. You can edit it.</p>
+              )}
             </div>
             <div className="mt-8 text-center">
               <div className="flex items-center justify-center text-white">
@@ -1585,6 +1615,7 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
           setHighRiskAcknowledged(false);
           setReportState('idle');
           setReportMessage('');
+          setAccountBalance(DEFAULT_ACCOUNT.balance);
           goHome();
         }}
         className="mt-4 text-[10px] text-zinc-500 hover:text-zinc-300 flex items-center gap-1.5"
