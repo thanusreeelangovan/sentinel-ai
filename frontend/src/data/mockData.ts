@@ -5,7 +5,7 @@ export const DEFAULT_ACCOUNT: BankAccount = {
   bankName: 'State Bank of India',
   accountMask: '•••• 4821',
   accountHolder: 'Thanusree E',
-  balance: 142850.00,
+  balance: 300000.00,
 };
 
 export const UPI_CONTACTS: UpiContact[] = [
