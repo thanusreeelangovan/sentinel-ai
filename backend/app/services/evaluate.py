@@ -25,6 +25,22 @@ POLICY_BY_DECISION = {
     "BLOCK": "POLICY_ZERO_TRUST_DEVICE_COMPROMISE",
 }
 
+ACCOUNT_TAKEOVER_POLICY = "POLICY_ACCOUNT_TAKEOVER_HARD_BLOCK"
+
+
+def _is_account_takeover_pattern(
+    transaction: Transaction,
+    reason_codes: list[str],
+) -> bool:
+    usual_max = max(float(transaction.user_context.usual_transaction_range.max), 1.0)
+    amount_ratio = float(transaction.amount) / usual_max
+    unusual_hour = transaction.timestamp.hour in range(0, 5)
+    new_receiver = "NEW_RECEIVER" in reason_codes
+
+    # A valid PIN is not treated as sufficient evidence of legitimacy when the
+    # transaction combines an extreme amount, an unusual hour and a new receiver.
+    return unusual_hour and amount_ratio >= 5.0 and new_receiver
+
 
 def _risk_level(composite_score: float) -> str:
     if composite_score <= APPROVE_MAX_SCORE:
@@ -112,8 +128,19 @@ def evaluate_transaction(transaction: Transaction, db: Session) -> EvaluateRespo
     reason_codes = list(rules.rules_triggered)
     if anomaly.anomaly_score >= HIGH_ANOMALY_THRESHOLD:
         reason_codes.insert(0, "HIGH_ANOMALY")
-    decision = decide(risk.composite_score)
+    account_takeover = _is_account_takeover_pattern(transaction, reason_codes)
+    if account_takeover:
+        reason_codes.insert(0, "ACCOUNT_TAKEOVER_SUSPECTED")
+        decision = "BLOCK"
+    else:
+        decision = decide(risk.composite_score)
+
     rule_texts = list(rules.reason_codes)
+    if account_takeover:
+        rule_texts.insert(
+            0,
+            "Account takeover pattern: unusual hour, extreme amount, and new receiver",
+        )
     minimal = generate_minimal_explanation(
         decision=decision,
         reason_codes=reason_codes,
@@ -122,7 +149,7 @@ def evaluate_transaction(transaction: Transaction, db: Session) -> EvaluateRespo
         risk_score=risk.composite_score,
         transaction_id=transaction.transaction_id,
     )
-    risk_level = _risk_level(risk.composite_score)
+    risk_level = "HIGH" if account_takeover else _risk_level(risk.composite_score)
     explanation = generate_smartphone_explanation(
         risk_level=risk_level,
         reason_codes=reason_codes,
@@ -138,7 +165,9 @@ def evaluate_transaction(transaction: Transaction, db: Session) -> EvaluateRespo
         risk_breakdown=risk.risk_breakdown,
         reason_codes=reason_codes,
         explanation=explanation,
-        policy_applied=POLICY_BY_DECISION[decision],
+        policy_applied=(
+            ACCOUNT_TAKEOVER_POLICY if account_takeover else POLICY_BY_DECISION[decision]
+        ),
         model_version=anomaly.model_version,
         evaluated_at=datetime.now(timezone.utc).isoformat(),
         latency_ms=max(1, round((perf_counter() - started) * 1000)),
