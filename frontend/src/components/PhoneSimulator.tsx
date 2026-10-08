@@ -73,8 +73,7 @@ type ScreenType =
   | 'result'
   | 'activity'
   | 'activity_pin'
-  | 'activity_detail'
-  | 'demo_lab';
+  | 'activity_detail';
 
 const ACCOUNT_PIN = '4092';
 const BALANCE_STORAGE_KEY = 'sentinel_account_balance';
@@ -255,6 +254,27 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
         .includes(q),
     );
   }, [searchQuery]);
+
+  const recentPayees = useMemo(() => {
+    const seen = new Set<string>();
+    const contactsFromHistory = history
+      .map(record => UPI_CONTACTS.find(contact => contact.vpa === record.recipientId))
+      .filter((contact): contact is UpiContact => Boolean(contact))
+      .filter(contact => {
+        if (seen.has(contact.vpa)) return false;
+        seen.add(contact.vpa);
+        return true;
+      });
+
+    return {
+      people: contactsFromHistory
+        .filter(contact => contact.receiver_type === 'user')
+        .slice(0, 5),
+      businesses: contactsFromHistory
+        .filter(contact => contact.receiver_type !== 'user')
+        .slice(0, 5),
+    };
+  }, [history]);
 
   const persistHistory = (records: PaymentRecord[]) => {
     setHistory(records);
@@ -563,6 +583,39 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
     }
   };
 
+  useEffect(() => {
+    const purpose =
+      screen === 'balance_pin'
+        ? 'balance'
+        : screen === 'payment_pin'
+          ? 'payment'
+          : screen === 'stepup_pin'
+            ? 'stepup'
+            : screen === 'activity_pin'
+              ? 'activity'
+              : null;
+
+    if (!purpose) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (/^[0-9]$/.test(event.key)) {
+        event.preventDefault();
+        addPinDigit(event.key, purpose);
+        return;
+      }
+
+      if (event.key === 'Backspace' || event.key === 'Delete') {
+        event.preventDefault();
+        setPin(current => current.slice(0, -1));
+        setPinError(null);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+    // Physical keyboard mirrors the on-screen PIN pad for faster live demos.
+  }, [screen, pin, transaction, assessment, accountBalance, history, paymentMethod]);
+
   const completePayment = () => {
     const amount = transaction.amount;
     const nextBalance = Math.max(0, accountBalance - amount);
@@ -686,6 +739,8 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
       payee.defaultNote,
       payee.presetRisk === 'high',
     );
+    // Keep the deterministic demo amount, but let the presenter edit it before paying.
+    setScreen('amount');
   };
 
   const openRecentRecord = (record: PaymentRecord) => {
@@ -835,13 +890,6 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
                 <p className="text-[10px] uppercase tracking-[0.18em] text-zinc-500">BharatPay</p>
                 <h2 className="text-lg font-black text-white mt-1">Payments</h2>
               </div>
-              <button
-                onClick={() => setScreen('demo_lab')}
-                className="text-[10px] px-2.5 py-1.5 rounded-lg border border-zinc-700 text-zinc-300 flex items-center gap-1.5"
-              >
-                <PlayCircle className="w-3.5 h-3.5" />
-                Demo Lab
-              </button>
             </div>
 
             <div className="mt-4 rounded-3xl border border-zinc-700 bg-zinc-900/80 p-4">
@@ -909,6 +957,50 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
               </div>
               <ChevronRight className="w-4 h-4 text-zinc-600" />
             </button>
+
+            {(recentPayees.people.length > 0 || recentPayees.businesses.length > 0) && (
+              <div className="mt-5 space-y-4">
+                {recentPayees.people.length > 0 && (
+                  <div>
+                    <p className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 mb-3">Recent people</p>
+                    <div className="flex gap-3 overflow-x-auto pb-1">
+                      {recentPayees.people.map(contact => (
+                        <button
+                          key={contact.vpa}
+                          onClick={() => handleContact(contact)}
+                          className="w-[58px] flex-shrink-0 text-center"
+                        >
+                          <div className="w-11 h-11 mx-auto rounded-full bg-zinc-800 border border-zinc-700 flex items-center justify-center text-[10px] font-bold text-white">
+                            {contact.initials}
+                          </div>
+                          <p className="text-[9px] text-zinc-300 mt-1.5 truncate">{contact.name.split(' ')[0]}</p>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {recentPayees.businesses.length > 0 && (
+                  <div>
+                    <p className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 mb-3">Businesses</p>
+                    <div className="flex gap-3 overflow-x-auto pb-1">
+                      {recentPayees.businesses.map(contact => (
+                        <button
+                          key={contact.vpa}
+                          onClick={() => handleContact(contact)}
+                          className="w-[68px] flex-shrink-0 text-center"
+                        >
+                          <div className="w-11 h-11 mx-auto rounded-2xl bg-zinc-800 border border-zinc-700 flex items-center justify-center text-[10px] font-bold text-white">
+                            {contact.initials}
+                          </div>
+                          <p className="text-[9px] text-zinc-300 mt-1.5 truncate">{contact.name}</p>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             <div className="flex items-center justify-between mt-5 mb-3">
               <p className="text-[10px] uppercase tracking-[0.18em] text-zinc-500">Recent activity</p>
@@ -990,7 +1082,55 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
                 className="w-full rounded-2xl border border-zinc-700 bg-zinc-900 text-xs text-white pl-9 pr-3 py-3 outline-none focus:border-rose-500"
               />
             </div>
-            <div className="space-y-2 mt-4">
+            {!searchQuery.trim() && (
+              <div className="mt-5">
+                <div className="flex items-center gap-2 mb-3">
+                  <PlayCircle className="w-3.5 h-3.5 text-rose-400" />
+                  <div>
+                    <p className="text-[10px] uppercase tracking-[0.18em] text-zinc-400">Demo payments</p>
+                    <p className="text-[9px] text-zinc-600">Preset amounts are editable before payment</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  {DEMO_SCENARIOS.map(scenario => {
+                    const riskLabel =
+                      scenario.accent === 'red'
+                        ? 'HIGH'
+                        : scenario.accent === 'amber'
+                          ? 'MEDIUM'
+                          : 'LOW';
+                    const riskTone =
+                      scenario.accent === 'red'
+                        ? 'text-red-300 border-red-900/70'
+                        : scenario.accent === 'amber'
+                          ? 'text-amber-300 border-amber-900/70'
+                          : 'text-emerald-300 border-emerald-900/70';
+
+                    return (
+                      <button
+                        key={scenario.id}
+                        onClick={() => runDemo(scenario)}
+                        className={`rounded-2xl border bg-zinc-900/70 p-3 text-left ${riskTone}`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="w-8 h-8 rounded-xl bg-zinc-800 flex items-center justify-center text-[10px] font-black text-white">
+                            {scenario.payee.initials}
+                          </div>
+                          <span className="text-[8px] font-bold tracking-wider">{riskLabel}</span>
+                        </div>
+                        <p className="text-[10px] font-semibold text-white mt-2 truncate">{scenario.payee.name}</p>
+                        <p className="text-sm font-black text-zinc-100 mt-1">
+                          ₹{scenario.payee.defaultAmount.toLocaleString('en-IN')}
+                        </p>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            <p className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 mt-5 mb-2">All contacts</p>
+            <div className="space-y-2">
               {filteredContacts.map(contact => {
                 const blocked = blockedReceivers.includes(contact.vpa);
                 return (
@@ -1433,47 +1573,6 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
           </div>
         )}
 
-        {screen === 'demo_lab' && (
-          <div className="flex-1 p-5 overflow-y-auto">
-            <div className="flex items-center gap-3">
-              <button onClick={goHome} className="w-9 h-9 rounded-xl border border-zinc-700 flex items-center justify-center text-zinc-300">
-                <ArrowLeft className="w-4 h-4" />
-              </button>
-              <div>
-                <h3 className="text-sm font-bold text-white">SentinelAI Demo Lab</h3>
-                <p className="text-[10px] text-zinc-500">Controlled scenarios for presentations</p>
-              </div>
-            </div>
-            <div className="space-y-3 mt-5">
-              {DEMO_SCENARIOS.map(scenario => {
-                const tone = scenario.accent === 'red'
-                  ? 'border-red-900 bg-red-950/20'
-                  : scenario.accent === 'amber'
-                    ? 'border-amber-900 bg-amber-950/20'
-                    : 'border-emerald-900 bg-emerald-950/20';
-                return (
-                  <div key={scenario.id} className={`rounded-2xl border p-4 ${tone}`}>
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="text-xs font-bold text-white">{scenario.title}</p>
-                        <p className="text-[10px] text-zinc-500 mt-1">{scenario.subtitle}</p>
-                        <p className="text-[10px] text-zinc-400 mt-2">
-                          {scenario.payee.name} · ₹{scenario.payee.defaultAmount.toLocaleString('en-IN')}
-                        </p>
-                      </div>
-                      <button onClick={() => runDemo(scenario)} className="px-3 py-2 rounded-xl bg-zinc-900 border border-zinc-700 text-[10px] font-bold text-white">
-                        Run
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-            <p className="text-[9px] text-zinc-600 text-center mt-5">
-              Demo fixtures use the same payment authorization and SentinelAI evaluation flow as ordinary payments.
-            </p>
-          </div>
-        )}
       </div>
 
       <button
