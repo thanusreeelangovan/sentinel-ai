@@ -11,6 +11,7 @@ interface RiskInspectorProps {
 
 const reasonLabel = (code: string): string => {
   const labels: Record<string, string> = {
+    ACCOUNT_TAKEOVER_SUSPECTED: 'Account takeover pattern detected',
     HIGH_ANOMALY: 'Unusual transaction pattern',
     HIGH_TRANSACTION_VELOCITY: 'Transaction velocity is elevated',
     NEW_RECEIVER: 'New or limited-history receiver',
