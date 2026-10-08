@@ -555,7 +555,7 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
     setTransaction(prev => ({
       ...prev,
       amount,
-      timestamp: new Date().toISOString(),
+      timestamp: takeoverDemo ? prev.timestamp : new Date().toISOString(),
       note,
     }));
     setPinError(null);
@@ -586,7 +586,7 @@ export const PhoneSimulator: React.FC<PhoneSimulatorProps> = ({
         setScreen('pipeline');
         onExecuteTransaction({
           ...transaction,
-          timestamp: new Date().toISOString(),
+          timestamp: takeoverDemo ? transaction.timestamp : new Date().toISOString(),
         });
       } else {
         completePayment();
