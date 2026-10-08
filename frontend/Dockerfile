@@ -1,7 +1,7 @@
 # Build stage
 FROM node:20-alpine AS build
 WORKDIR /app
-ARG VITE_API_URL
+ARG VITE_API_URL=https://sentinel-ai-wmfu.onrender.com
 ENV VITE_API_URL=$VITE_API_URL
 COPY package*.json ./
 RUN npm ci

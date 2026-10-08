@@ -20,6 +20,15 @@ The composite risk score uses 40% Isolation Forest anomaly, 25% velocity, 20% re
 * Anomaly detection: scikit-learn Isolation Forest
 * Deployment: Docker and Docker Compose, with Nginx serving the production frontend build
 
+## Live Deployment
+
+- Frontend: https://sentinel-ai-1-5u3s.onrender.com
+- Backend API: https://sentinel-ai-wmfu.onrender.com
+- Swagger / OpenAPI: https://sentinel-ai-wmfu.onrender.com/docs
+- Health check: https://sentinel-ai-wmfu.onrender.com/health
+
+The hosted frontend is built from `main` and points to the deployed FastAPI service. SentinelAI runs the realistic UPI-style payment experience with the separate Demo Lab, PIN-gated balance and transaction details, LOW/MEDIUM/HIGH intervention flows, reporting, blocking, and receipt generation.
+
 ## Docker Deployment
 
 Copy the environment example and provide a PostgreSQL password:
